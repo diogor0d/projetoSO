@@ -1,3 +1,11 @@
+/*
+    Projeto de Sistemas Operativos 2024/2025 - DEIChain
+    Diogo Nuno Fonseca Rodrigues 2022257625
+    Guilherme Teixeira Gonçalves Rosmaninho 2022257636
+*/
+
+#define _GNU_SOURCE // para o vasprintf
+#include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
@@ -7,11 +15,11 @@
 #include <unistd.h>
 #include <string.h>
 #include <time.h>
+#include <sys/wait.h>
+#include <semaphore.h>
 
 #include "Controller.h"
-
-#define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
-#define SHM_LEDGER "/shm_ledger"
+#include "Miner.h"
 
 int NUM_MINERS;
 int POOL_SIZE;
@@ -19,9 +27,12 @@ int TRANSACTIONS_PER_BLOCK;
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE = 10000; // valor por omissão
 
-int is_positive_integer(const char *str) {
-    while (*str) {
-        if (!isdigit(*str)) {
+int is_positive_integer(const char *str)
+{
+    while (*str)
+    {
+        if (!isdigit(*str))
+        {
             return 0;
         }
         str++;
@@ -29,108 +40,318 @@ int is_positive_integer(const char *str) {
     return 1;
 }
 
-void parse_config(const char *filename) {
-    FILE *file = fopen(filename, "r");
-    if (file == NULL) {
-        perror("Erro na abertura do ficheiro de configurações.");
+void log_info(sem_t *sem_log_file, const char *format, ...)
+{
+    char *log_message;
+    va_list args;
+
+    va_start(args, format);
+
+    // formatar a string
+    if (vasprintf(&log_message, format, args) == -1)
+    {
+        va_end(args);
+        perror("Erro ao formatar mensagem de log");
+        return;
+    }
+
+    va_end(args);
+
+    // bloquear o semáforo
+    sem_wait(sem_log_file);
+
+    // escrever o log
+    FILE *file = fopen(LOG_FILE, "a");
+    if (!file)
+    {
+        perror("Erro na abertura do ficheiro de log");
+        sem_post(sem_log_file); // desbloquear o semáforo
+        sem_close(sem_log_file);
+        free(log_message); // libertar a memoria alocada para a mensagem formatada
+        return;
+    }
+
+    // obter o tempo atual
+    time_t rawtime;
+    struct tm *timeinfo;
+    char time_str[20]; // Buffer para "dd/mm/yyyy hh:mm:ss"
+    time(&rawtime);
+    timeinfo = localtime(&rawtime);
+    strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
+
+    // Escrever a mensagem de log no ficheiro e no stdout
+    fprintf(file, "%s > %s\n", time_str, log_message);
+    fprintf(stdout, "\033[33m%s > \033[0m%s\n", time_str, log_message);
+
+    fclose(file);
+
+    // desbloquear o semáforo
+    sem_post(sem_log_file);
+
+    // libertar a memoria alocada para a mensagem formatada
+    free(log_message);
+}
+
+void parse_config()
+{
+    FILE *file = fopen(CONFIG_FILE, "r");
+    if (file == NULL)
+    {
+        printf("Erro na abertura do ficheiro de configurações.");
         exit(EXIT_FAILURE);
     }
 
     char buffer[128];
-    if (fscanf(file, "NUM_MINERS=%s\n", buffer) != 1 || !is_positive_integer(buffer)) {
-        fprintf(stderr, "Valor inválido para NUM_MINERS\n");
+    if (fscanf(file, "NUM_MINERS=%s\n", buffer) != 1 || !is_positive_integer(buffer))
+    {
+        printf("Valor inválido para NUM_MINERS");
         fclose(file);
         exit(EXIT_FAILURE);
     }
     NUM_MINERS = atoi(buffer);
 
-    if (fscanf(file, "POOL_SIZE=%s\n", buffer) != 1 || !is_positive_integer(buffer)) {
-        fprintf(stderr, "Valor inválido para POOL_SIZE\n");
+    if (fscanf(file, "POOL_SIZE=%s\n", buffer) != 1 || !is_positive_integer(buffer))
+    {
+        printf("Valor inválido para POOL_SIZE");
         fclose(file);
         exit(EXIT_FAILURE);
     }
     POOL_SIZE = atoi(buffer);
 
-    if (fscanf(file, "TRANSACTIONS_PER_BLOCK=%s\n", buffer) != 1 || !is_positive_integer(buffer)) {
-        fprintf(stderr, "Valor inválido para TRANSACTIONS_PER_BLOCK\n");
+    if (fscanf(file, "TRANSACTIONS_PER_BLOCK=%s\n", buffer) != 1 || !is_positive_integer(buffer))
+    {
+        printf("Valor inválido para TRANSACTIONS_PER_BLOCK");
         fclose(file);
         exit(EXIT_FAILURE);
     }
     TRANSACTIONS_PER_BLOCK = atoi(buffer);
 
-    if (fscanf(file, "BLOCKCHAIN_BLOCKS=%s\n", buffer) != 1 || !is_positive_integer(buffer)) {
-        fprintf(stderr, "Valor inválido para BLOCKCHAIN_BLOCKS\n");
+    if (fscanf(file, "BLOCKCHAIN_BLOCKS=%s\n", buffer) != 1 || !is_positive_integer(buffer))
+    {
+        printf("Valor inválido para BLOCKCHAIN_BLOCKS");
         fclose(file);
         exit(EXIT_FAILURE);
     }
     BLOCKCHAIN_BLOCKS = atoi(buffer);
 
     // efetuar a leitura transaction_pool_size apenas se existir
-    if (fscanf(file, "TRANSACTION_POOL_SIZE=%s\n", buffer) == 1 && is_positive_integer(buffer)) {
+    if (fscanf(file, "TRANSACTION_POOL_SIZE=%s\n", buffer) == 1 && is_positive_integer(buffer))
+    {
         TRANSACTION_POOL_SIZE = atoi(buffer);
     }
 
     fclose(file);
 }
 
-int main() {
-    parse_config("config.cfg");
+int main()
+{
+    // Ler e processar o ficheiro de configuração
+    parse_config();
 
-    printf("NUM_MINERS: %d\n", NUM_MINERS);
-    printf("POOL_SIZE: %d\n", POOL_SIZE);
-    printf("TRANSACTIONS_PER_BLOCK: %d\n", TRANSACTIONS_PER_BLOCK);
-    printf("BLOCKCHAIN_BLOCKS: %d\n", BLOCKCHAIN_BLOCKS);
-    printf("TRANSACTION_POOL_SIZE: %d\n", TRANSACTION_POOL_SIZE);
+    // abertura do semaforo para logs
+    sem_t *sem_log_file = sem_open(SEM_LOG_FILE, O_CREAT, 0666, 1);
+    if (sem_log_file == SEM_FAILED)
+    {
+        perror("Erro ao criar semáforo para LOG_FILE");
+        sem_unlink(SEM_TRANSACTIONS_POOL); // Clean up
+        sem_unlink(SEM_LEDGER);
+        exit(EXIT_FAILURE);
+    }
+
+    log_info(sem_log_file, "Processo Controller iniciado (PID: %d)", getpid());
+    log_info(sem_log_file, "Configurações atuais:");
+    log_info(sem_log_file, "NUM_MINERS: %d", NUM_MINERS);
+    log_info(sem_log_file, "POOL_SIZE: %d", POOL_SIZE);
+    log_info(sem_log_file, "TRANSACTIONS_PER_BLOCK: %d", TRANSACTIONS_PER_BLOCK);
+    log_info(sem_log_file, "BLOCKCHAIN_BLOCKS: %d", BLOCKCHAIN_BLOCKS);
+    log_info(sem_log_file, "TRANSACTION_POOL_SIZE: %d\n", TRANSACTION_POOL_SIZE);
 
     int shm_transactionspool_fd, shm_ledger_fd;
     int shm_size;
 
-    // Create the shared memory segment for TRANSACTIONS_POOL
-    shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
-    if (shm_transactionspool_fd  == -1) {
-        perror("Erro na criação de SHM_TRANSACTIONSPOOL");
-        exit(EXIT_FAILURE);
-    }
-    shm_size = sizeof(TransactionPool) * TRANSACTION_POOL_SIZE;
-    if (ftruncate(shm_transactionspool_fd, shm_size) == -1) {
-        perror("Erro ao definir o tamanho de SHM_TRANSACTIONSPOOL");
+    // Criação dos semáforos
+    sem_t *sem_transactions_pool = sem_open(SEM_TRANSACTIONS_POOL, O_CREAT, 0666, 1);
+    if (sem_transactions_pool == SEM_FAILED)
+    {
+        log_info(sem_log_file, "Erro ao criar semáforo para TRANSACTIONS_POOL");
+        sem_unlink(SEM_LOG_FILE); // Clean up
         exit(EXIT_FAILURE);
     }
 
-    // Create the shared memory segment for LEDGER
+    sem_t *sem_ledger = sem_open(SEM_LEDGER, O_CREAT, 0666, 1);
+    if (sem_ledger == SEM_FAILED)
+    {
+        log_info(sem_log_file, "Erro ao criar semáforo para LEDGER");
+        sem_unlink(SEM_TRANSACTIONS_POOL); // Clean up
+        sem_unlink(SEM_LOG_FILE);          // Clean up
+        exit(EXIT_FAILURE);
+    }
+
+    shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
+    if (shm_transactionspool_fd == -1)
+    {
+        log_info(sem_log_file, "Erro na criação de SHM_TRANSACTIONSPOOL");
+        exit(EXIT_FAILURE);
+    }
+    shm_size = sizeof(TransactionPool) + (TRANSACTION_POOL_SIZE * sizeof(Transaction));
+    if (ftruncate(shm_transactionspool_fd, shm_size) == -1)
+    {
+        log_info(sem_log_file, "Erro ao definir o tamanho de SHM_TRANSACTIONSPOOL");
+        exit(EXIT_FAILURE);
+    }
+    // mapear a memoria partilhada
+    void *shm_transactionspool_base = mmap(NULL, shm_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
+    if (shm_transactionspool_base == MAP_FAILED)
+    {
+        log_info(sem_log_file, "Erro ao mapear SHM_TRANSACTIONSPOOL");
+        shm_unlink(SHM_TRANSACTIONS_POOL);
+        exit(EXIT_FAILURE);
+    }
+    // bloquear o semaforo antes de escrever na memoria partilhada
+    sem_wait(sem_transactions_pool);
+    memset(shm_transactionspool_base, 0, shm_size);
+    // Initialize the TransactionPool in shared memory
+    TransactionPool *tx_pool = (TransactionPool *)shm_transactionspool_base;
+    tx_pool->current_block_id = 0;
+    tx_pool->count = 0;
+    tx_pool->size = TRANSACTION_POOL_SIZE;
+    // Set the transactions pointer to the memory immediately after the TransactionPool
+    //  desbloquear o semaforo após a escrita
+    sem_post(sem_transactions_pool);
+
+    // Criar o segmento de memoria partilhada para LEDGER
     shm_ledger_fd = shm_open(SHM_LEDGER, O_CREAT | O_RDWR, 0666);
-    if (shm_ledger_fd == -1) {
-        perror("Erro na criação de SHM_LEDGER");
+    if (shm_ledger_fd == -1)
+    {
+        log_info(sem_log_file, "Erro na criação de SHM_LEDGER");
         exit(EXIT_FAILURE);
     }
     shm_size = 1024; // alterar no futuro para sizeof() com BLOCKCHAIN_BLOCKS * BLOCK_SIZE
-    if (ftruncate(shm_ledger_fd, shm_size) == -1) {
-        perror("Erro ao definir o tamanho de SHM_LEDGER");
+    if (ftruncate(shm_ledger_fd, shm_size) == -1)
+    {
+        log_info(sem_log_file, "Erro ao definir o tamanho de SHM_LEDGER");
         exit(EXIT_FAILURE);
     }
 
+    // Iniciar os processos dos varios componentes
+    pid_t pids[3]; // Array to store PIDs of the child processes
 
+    // Iniciar o miner
+    pids[0] = fork();
+    if (pids[0] == -1)
+    {
+        log_info(sem_log_file, "Erro ao criar o miner process");
+        exit(EXIT_FAILURE);
+    }
+    else if (pids[0] == 0)
+    {
+        log_info(sem_log_file, "Miner iniciado com PID %d", getpid());
+        miner(NUM_MINERS);
+        exit(EXIT_SUCCESS);
+    }
 
+    // Iniciar o validator
+    pids[1] = fork();
+    if (pids[1] == -1)
+    {
+        log_info(sem_log_file, "Erro ao criar o validator process");
+        exit(EXIT_FAILURE);
+    }
+    else if (pids[1] == 0)
+    {
+        log_info(sem_log_file, "Validator iniciado com PID %d", getpid());
+        // validator();        // A implementar
+        exit(EXIT_SUCCESS);
+    }
 
-    // Unmap and close the shared memory segments
-    if (munmap(NULL, shm_size) == -1) {
-        perror("Erro ao desmapear SHM_TRANSACTIONSPOOL");
+    // Inciar o processo de statistics
+    pids[2] = fork();
+    if (pids[2] == -1)
+    {
+        log_info(sem_log_file, "Erro ao criar o statistics process");
+        exit(EXIT_FAILURE);
     }
-    if (close(shm_transactionspool_fd) == -1) {
-        perror("Erro ao fechar SHM_TRANSACTIONSPOOL");
-    }
-    if (shm_unlink(SHM_TRANSACTIONS_POOL) == -1) {
-        perror("Erro ao desvincular SHM_TRANSACTIONSPOOL");
+    else if (pids[2] == 0)
+    {
+        log_info(sem_log_file, "Statistics iniciado com PID %d", getpid());
+        // statistics();       // A implementar
+        exit(EXIT_SUCCESS);
     }
 
-    if (munmap(NULL, shm_size) == -1) {
-        perror("Erro ao desmapear SHM_LEDGER");
+    // Controlador aguarda pelo término de todos os processos filhos
+    for (int i = 0; i < 3; i++)
+    {
+        int status;
+        if (waitpid(pids[i], &status, 0) == -1)
+        {
+            log_info(sem_log_file, "Erro ao esperar pelo processo filho");
+        }
+        else
+        {
+            if (WIFEXITED(status))
+            {
+                log_info(sem_log_file, "Processo com PID %d terminou com código de saída %d", pids[i], WEXITSTATUS(status));
+            }
+            else if (WIFSIGNALED(status))
+            {
+                log_info(sem_log_file, "Processo com PID %d terminou devido a sinal %d", pids[i], WTERMSIG(status));
+            }
+        }
     }
-    if (close(shm_ledger_fd) == -1) {
-        perror("Erro ao fechar SHM_LEDGER");
+
+    // Unmap e fecho dos segmentos de memoria partilhada
+    if (munmap(shm_transactionspool_base, shm_size) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desmapear SHM_TRANSACTIONSPOOL");
     }
-    if (shm_unlink(SHM_LEDGER) == -1) {
-        perror("Erro ao desvincular SHM_LEDGER");
+    if (close(shm_transactionspool_fd) == -1)
+    {
+        log_info(sem_log_file, "Erro ao fechar SHM_TRANSACTIONSPOOL");
+    }
+    if (shm_unlink(SHM_TRANSACTIONS_POOL) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desvincular SHM_TRANSACTIONSPOOL");
+    }
+
+    if (munmap(NULL, shm_size) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desmapear SHM_LEDGER");
+    }
+    if (close(shm_ledger_fd) == -1)
+    {
+        log_info(sem_log_file, "Erro ao fechar SHM_LEDGER");
+    }
+    if (shm_unlink(SHM_LEDGER) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desvincular SHM_LEDGER");
+    }
+
+    // Fechar os semáforos
+    if (sem_close(sem_transactions_pool) == -1)
+    {
+        log_info(sem_log_file, "Erro ao fechar semáforo SEM_TRANSACTIONS_POOL");
+    }
+    if (sem_close(sem_ledger) == -1)
+    {
+        log_info(sem_log_file, "Erro ao fechar semáforo SEM_LEDGER");
+    }
+    if (sem_close(sem_log_file) == -1)
+    {
+        log_info(sem_log_file, "Erro ao fechar semáforo SEM_LOG_FILE");
+    }
+
+    // Remover os semáforos do sistema
+    if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desvincular semáforo SEM_TRANSACTIONS_POOL");
+    }
+    if (sem_unlink(SEM_LEDGER) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desvincular semáforo SEM_LEDGER");
+    }
+    if (sem_unlink(SEM_LOG_FILE) == -1)
+    {
+        log_info(sem_log_file, "Erro ao desvincular semáforo SEM_LOG_FILE");
     }
 
     return 0;

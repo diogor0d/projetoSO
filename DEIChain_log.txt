@@ -1,0 +1,730 @@
+29/03/2025 19:01:23 > Processo Controller iniciado (PID: 3071)
+29/03/2025 19:01:23 > Configurações atuais:
+29/03/2025 19:01:23 > NUM_MINERS: 5
+29/03/2025 19:01:23 > POOL_SIZE: 50
+29/03/2025 19:01:23 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:01:23 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:01:23 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:01:23 > Statistics iniciado com PID 3077
+29/03/2025 19:01:23 > Validator iniciado com PID 3076
+29/03/2025 19:01:23 > Miner iniciado com PID 3075
+29/03/2025 19:01:23 > Miner thread 3 (PID: 3075) is running...
+29/03/2025 19:01:23 > Miner thread 2 (PID: 3075) is running...
+29/03/2025 19:01:23 > Miner thread 4 (PID: 3075) is running...
+29/03/2025 19:01:23 > Miner thread 1 (PID: 3075) is running...
+29/03/2025 19:01:23 > Miner thread 5 (PID: 3075) is running...
+29/03/2025 19:01:38 > Miner thread 3 has finished.
+29/03/2025 19:01:38 > Miner thread 2 has finished.
+29/03/2025 19:01:38 > Miner thread 4 has finished.
+29/03/2025 19:01:38 > Miner thread 1 has finished.
+29/03/2025 19:01:38 > Miner thread 5 has finished.
+29/03/2025 19:01:38 > Todas as miner threads terminaram.
+
+29/03/2025 19:01:38 > Processo com PID 3075 terminou com código de saída 0
+29/03/2025 19:01:38 > Processo com PID 3076 terminou com código de saída 0
+29/03/2025 19:01:38 > Processo com PID 3077 terminou com código de saída 0
+29/03/2025 19:05:39 > Miner iniciado com PID 3120
+29/03/2025 19:05:39 > Validator iniciado com PID 3121
+29/03/2025 19:05:39 > Statistics iniciado com PID 3122
+29/03/2025 19:05:39 > Miner thread 1 (PID: 3120) is running...
+29/03/2025 19:05:39 > Miner thread 2 (PID: 3120) is running...
+29/03/2025 19:05:39 > Miner thread 3 (PID: 3120) is running...
+29/03/2025 19:05:39 > Miner thread 4 (PID: 3120) is running...
+29/03/2025 19:05:39 > Miner thread 5 (PID: 3120) is running...
+29/03/2025 19:06:19 > Processo Controller iniciado (PID: 3135)
+29/03/2025 19:06:19 > Configurações atuais:
+29/03/2025 19:06:19 > NUM_MINERS: 5
+29/03/2025 19:06:19 > POOL_SIZE: 50
+29/03/2025 19:06:19 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:06:19 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:06:19 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:06:19 > Miner iniciado com PID 3140
+29/03/2025 19:06:19 > Validator iniciado com PID 3141
+29/03/2025 19:06:19 > Statistics iniciado com PID 3142
+29/03/2025 19:06:19 > Miner thread 5 (PID: 3140) is running...
+29/03/2025 19:06:19 > Miner thread 4 (PID: 3140) is running...
+29/03/2025 19:06:19 > Miner thread 3 (PID: 3140) is running...
+29/03/2025 19:06:19 > Miner thread 2 (PID: 3140) is running...
+29/03/2025 19:06:19 > Miner thread 1 (PID: 3140) is running...
+29/03/2025 19:06:34 > Miner thread 5 has finished.
+29/03/2025 19:06:34 > Miner thread 4 has finished.
+29/03/2025 19:06:34 > Miner thread 3 has finished.
+29/03/2025 19:06:34 > Miner thread 2 has finished.
+29/03/2025 19:06:34 > Miner thread 1 has finished.
+29/03/2025 19:06:34 > Todas as miner threads terminaram.
+
+29/03/2025 19:06:34 > Processo com PID 3140 terminou com código de saída 0
+29/03/2025 19:06:34 > Processo com PID 3141 terminou com código de saída 0
+29/03/2025 19:06:34 > Processo com PID 3142 terminou com código de saída 0
+29/03/2025 19:06:34 > Processo Controller iniciado (PID: 3158)
+29/03/2025 19:06:34 > Configurações atuais:
+29/03/2025 19:06:34 > NUM_MINERS: 5
+29/03/2025 19:06:34 > POOL_SIZE: 50
+29/03/2025 19:06:34 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:06:34 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:06:34 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:06:34 > Statistics iniciado com PID 3167
+29/03/2025 19:06:34 > Validator iniciado com PID 3166
+29/03/2025 19:06:34 > Miner iniciado com PID 3165
+29/03/2025 19:06:34 > Miner thread 2 (PID: 3165) is running...
+29/03/2025 19:06:34 > Miner thread 1 (PID: 3165) is running...
+29/03/2025 19:06:34 > Miner thread 3 (PID: 3165) is running...
+29/03/2025 19:06:34 > Miner thread 4 (PID: 3165) is running...
+29/03/2025 19:06:34 > Miner thread 5 (PID: 3165) is running...
+29/03/2025 19:06:49 > Miner thread 2 has finished.
+29/03/2025 19:06:49 > Miner thread 1 has finished.
+29/03/2025 19:06:49 > Miner thread 3 has finished.
+29/03/2025 19:06:49 > Miner thread 4 has finished.
+29/03/2025 19:06:49 > Miner thread 5 has finished.
+29/03/2025 19:06:49 > Todas as miner threads terminaram.
+
+29/03/2025 19:06:49 > Processo com PID 3165 terminou com código de saída 0
+29/03/2025 19:06:49 > Processo com PID 3166 terminou com código de saída 0
+29/03/2025 19:06:49 > Processo com PID 3167 terminou com código de saída 0
+29/03/2025 19:07:47 > Miner iniciado com PID 3188
+29/03/2025 19:07:47 > Statistics iniciado com PID 3190
+29/03/2025 19:07:47 > Validator iniciado com PID 3189
+29/03/2025 19:07:47 > Miner thread 2 (PID: 3188) is running...
+29/03/2025 19:07:47 > Miner thread 1 (PID: 3188) is running...
+29/03/2025 19:07:47 > Miner thread 3 (PID: 3188) is running...
+29/03/2025 19:07:47 > Miner thread 4 (PID: 3188) is running...
+29/03/2025 19:07:47 > Miner thread 5 (PID: 3188) is running...
+29/03/2025 19:34:05 > Processo Controller iniciado (PID: 3318)
+29/03/2025 19:34:05 > Configurações atuais:
+29/03/2025 19:34:05 > NUM_MINERS: 5
+29/03/2025 19:34:05 > POOL_SIZE: 50
+29/03/2025 19:34:05 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:34:05 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:34:05 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:34:05 > Miner iniciado com PID 3321
+29/03/2025 19:34:05 > Statistics iniciado com PID 3323
+29/03/2025 19:34:05 > Validator iniciado com PID 3322
+29/03/2025 19:34:05 > Miner thread 5 (PID: 3321) is running...
+29/03/2025 19:34:05 > Miner thread 4 (PID: 3321) is running...
+29/03/2025 19:34:05 > Miner thread 2 (PID: 3321) is running...
+29/03/2025 19:34:05 > Miner thread 1 (PID: 3321) is running...
+29/03/2025 19:34:05 > Miner thread 3 (PID: 3321) is running...
+29/03/2025 19:34:20 > Miner thread 5 has finished.
+29/03/2025 19:34:20 > Miner thread 4 has finished.
+29/03/2025 19:34:20 > Miner thread 2 has finished.
+29/03/2025 19:34:20 > Miner thread 1 has finished.
+29/03/2025 19:34:20 > Miner thread 3 has finished.
+29/03/2025 19:34:20 > Todas as miner threads terminaram.
+
+29/03/2025 19:34:20 > Processo com PID 3321 terminou com código de saída 0
+29/03/2025 19:34:20 > Processo com PID 3322 terminou com código de saída 0
+29/03/2025 19:34:20 > Processo com PID 3323 terminou com código de saída 0
+29/03/2025 19:47:21 > Processo Controller iniciado (PID: 3348)
+29/03/2025 19:47:21 > Configurações atuais:
+29/03/2025 19:47:21 > NUM_MINERS: 5
+29/03/2025 19:47:21 > POOL_SIZE: 50
+29/03/2025 19:47:21 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:47:21 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:47:21 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:47:21 > Validator iniciado com PID 3354
+29/03/2025 19:47:21 > Statistics iniciado com PID 3355
+29/03/2025 19:47:21 > Miner iniciado com PID 3353
+29/03/2025 19:47:21 > Miner thread 5 (PID: 3353) is running...
+29/03/2025 19:47:21 > Miner thread 1 (PID: 3353) is running...
+29/03/2025 19:47:21 > Miner thread 3 (PID: 3353) is running...
+29/03/2025 19:47:21 > Miner thread 2 (PID: 3353) is running...
+29/03/2025 19:47:21 > Miner thread 4 (PID: 3353) is running...
+29/03/2025 19:47:36 > Miner thread 5 has finished.
+29/03/2025 19:47:36 > Miner thread 1 has finished.
+29/03/2025 19:47:36 > Miner thread 3 has finished.
+29/03/2025 19:47:36 > Miner thread 2 has finished.
+29/03/2025 19:47:36 > Miner thread 4 has finished.
+29/03/2025 19:47:36 > Todas as miner threads terminaram.
+
+29/03/2025 19:47:36 > Processo com PID 3353 terminou com código de saída 0
+29/03/2025 19:47:36 > Processo com PID 3354 terminou com código de saída 0
+29/03/2025 19:47:36 > Processo com PID 3355 terminou com código de saída 0
+29/03/2025 19:48:59 > Processo Controller iniciado (PID: 3394)
+29/03/2025 19:48:59 > Configurações atuais:
+29/03/2025 19:48:59 > NUM_MINERS: 5
+29/03/2025 19:48:59 > POOL_SIZE: 50
+29/03/2025 19:48:59 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:48:59 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:48:59 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:48:59 > Miner iniciado com PID 3397
+29/03/2025 19:48:59 > Validator iniciado com PID 3398
+29/03/2025 19:48:59 > Statistics iniciado com PID 3399
+29/03/2025 19:48:59 > Miner thread 1 (PID: 3397) is running...
+29/03/2025 19:48:59 > Miner thread 2 (PID: 3397) is running...
+29/03/2025 19:48:59 > Miner thread 3 (PID: 3397) is running...
+29/03/2025 19:48:59 > Miner thread 4 (PID: 3397) is running...
+29/03/2025 19:48:59 > Miner thread 5 (PID: 3397) is running...
+29/03/2025 19:49:14 > Miner thread 1 has finished.
+29/03/2025 19:49:14 > Miner thread 2 has finished.
+29/03/2025 19:49:14 > Miner thread 3 has finished.
+29/03/2025 19:49:14 > Miner thread 4 has finished.
+29/03/2025 19:49:14 > Miner thread 5 has finished.
+29/03/2025 19:49:14 > Todas as miner threads terminaram.
+
+29/03/2025 19:49:14 > Processo com PID 3397 terminou com código de saída 0
+29/03/2025 19:49:14 > Processo com PID 3398 terminou com código de saída 0
+29/03/2025 19:49:14 > Processo com PID 3399 terminou com código de saída 0
+29/03/2025 19:49:28 > Processo Controller iniciado (PID: 3420)
+29/03/2025 19:49:28 > Configurações atuais:
+29/03/2025 19:49:28 > NUM_MINERS: 5
+29/03/2025 19:49:28 > POOL_SIZE: 50
+29/03/2025 19:49:28 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:49:28 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:49:28 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:49:28 > Miner iniciado com PID 3424
+29/03/2025 19:49:28 > Validator iniciado com PID 3425
+29/03/2025 19:49:28 > Statistics iniciado com PID 3426
+29/03/2025 19:49:28 > Miner thread 1 (PID: 3424) is running...
+29/03/2025 19:49:28 > Miner thread 3 (PID: 3424) is running...
+29/03/2025 19:49:28 > Miner thread 4 (PID: 3424) is running...
+29/03/2025 19:49:28 > Miner thread 2 (PID: 3424) is running...
+29/03/2025 19:49:28 > Miner thread 5 (PID: 3424) is running...
+29/03/2025 19:49:43 > Miner thread 1 has finished.
+29/03/2025 19:49:43 > Miner thread 3 has finished.
+29/03/2025 19:49:43 > Miner thread 4 has finished.
+29/03/2025 19:49:43 > Miner thread 2 has finished.
+29/03/2025 19:49:43 > Miner thread 5 has finished.
+29/03/2025 19:49:43 > Todas as miner threads terminaram.
+
+29/03/2025 19:49:43 > Processo com PID 3424 terminou com código de saída 0
+29/03/2025 19:49:43 > Processo com PID 3425 terminou com código de saída 0
+29/03/2025 19:49:43 > Processo com PID 3426 terminou com código de saída 0
+29/03/2025 19:51:17 > Processo Controller iniciado (PID: 3444)
+29/03/2025 19:51:17 > Configurações atuais:
+29/03/2025 19:51:17 > NUM_MINERS: 5
+29/03/2025 19:51:17 > POOL_SIZE: 50
+29/03/2025 19:51:17 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:51:17 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:51:17 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:51:17 > Statistics iniciado com PID 3451
+29/03/2025 19:51:17 > Validator iniciado com PID 3450
+29/03/2025 19:51:17 > Miner iniciado com PID 3449
+29/03/2025 19:51:17 > Miner thread 5 (PID: 3449) is running...
+29/03/2025 19:51:17 > Miner thread 4 (PID: 3449) is running...
+29/03/2025 19:51:17 > Miner thread 3 (PID: 3449) is running...
+29/03/2025 19:51:17 > Miner thread 2 (PID: 3449) is running...
+29/03/2025 19:51:17 > Miner thread 1 (PID: 3449) is running...
+29/03/2025 19:51:32 > Miner thread 5 has finished.
+29/03/2025 19:51:32 > Miner thread 4 has finished.
+29/03/2025 19:51:32 > Miner thread 3 has finished.
+29/03/2025 19:51:32 > Miner thread 2 has finished.
+29/03/2025 19:51:32 > Miner thread 1 has finished.
+29/03/2025 19:51:32 > Todas as miner threads terminaram.
+
+29/03/2025 19:51:32 > Processo com PID 3449 terminou com código de saída 0
+29/03/2025 19:51:32 > Processo com PID 3450 terminou com código de saída 0
+29/03/2025 19:51:32 > Processo com PID 3451 terminou com código de saída 0
+29/03/2025 19:51:38 > Processo Controller iniciado (PID: 3469)
+29/03/2025 19:51:38 > Configurações atuais:
+29/03/2025 19:51:38 > NUM_MINERS: 5
+29/03/2025 19:51:38 > POOL_SIZE: 50
+29/03/2025 19:51:38 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:51:38 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:51:38 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:51:38 > Miner iniciado com PID 3472
+29/03/2025 19:51:38 > Miner thread 4 (PID: 3472) is running...
+29/03/2025 19:51:38 > Statistics iniciado com PID 3474
+29/03/2025 19:51:38 > Miner thread 3 (PID: 3472) is running...
+29/03/2025 19:51:38 > Miner thread 2 (PID: 3472) is running...
+29/03/2025 19:51:38 > Miner thread 1 (PID: 3472) is running...
+29/03/2025 19:51:38 > Validator iniciado com PID 3473
+29/03/2025 19:51:38 > Miner thread 5 (PID: 3472) is running...
+29/03/2025 19:51:53 > Miner thread 4 has finished.
+29/03/2025 19:51:53 > Miner thread 3 has finished.
+29/03/2025 19:51:53 > Miner thread 2 has finished.
+29/03/2025 19:51:53 > Miner thread 1 has finished.
+29/03/2025 19:51:53 > Miner thread 5 has finished.
+29/03/2025 19:51:53 > Todas as miner threads terminaram.
+
+29/03/2025 19:51:53 > Processo com PID 3472 terminou com código de saída 0
+29/03/2025 19:51:53 > Processo com PID 3473 terminou com código de saída 0
+29/03/2025 19:51:53 > Processo com PID 3474 terminou com código de saída 0
+29/03/2025 19:51:58 > Processo Controller iniciado (PID: 3493)
+29/03/2025 19:51:58 > Configurações atuais:
+29/03/2025 19:51:58 > NUM_MINERS: 5
+29/03/2025 19:51:58 > POOL_SIZE: 50
+29/03/2025 19:51:58 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:51:58 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:51:58 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:51:58 > Miner iniciado com PID 3496
+29/03/2025 19:51:58 > Miner thread 5 (PID: 3496) is running...
+29/03/2025 19:51:58 > Statistics iniciado com PID 3498
+29/03/2025 19:51:58 > Miner thread 4 (PID: 3496) is running...
+29/03/2025 19:51:58 > Miner thread 3 (PID: 3496) is running...
+29/03/2025 19:51:58 > Miner thread 2 (PID: 3496) is running...
+29/03/2025 19:51:58 > Miner thread 1 (PID: 3496) is running...
+29/03/2025 19:51:58 > Validator iniciado com PID 3497
+29/03/2025 19:52:13 > Miner thread 5 has finished.
+29/03/2025 19:52:13 > Miner thread 4 has finished.
+29/03/2025 19:52:13 > Miner thread 3 has finished.
+29/03/2025 19:52:13 > Miner thread 2 has finished.
+29/03/2025 19:52:13 > Miner thread 1 has finished.
+29/03/2025 19:52:13 > Todas as miner threads terminaram.
+
+29/03/2025 19:52:13 > Processo com PID 3496 terminou com código de saída 0
+29/03/2025 19:52:13 > Processo com PID 3497 terminou com código de saída 0
+29/03/2025 19:52:13 > Processo com PID 3498 terminou com código de saída 0
+29/03/2025 19:53:44 > Processo Controller iniciado (PID: 3540)
+29/03/2025 19:53:44 > Configurações atuais:
+29/03/2025 19:53:44 > NUM_MINERS: 5
+29/03/2025 19:53:44 > POOL_SIZE: 50
+29/03/2025 19:53:44 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:53:44 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:53:44 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:53:44 > Miner iniciado com PID 3544
+29/03/2025 19:53:45 > Validator iniciado com PID 3545
+29/03/2025 19:53:45 > Statistics iniciado com PID 3546
+29/03/2025 19:53:45 > Miner thread 4 (PID: 3544) is running...
+29/03/2025 19:53:45 > Miner thread 3 (PID: 3544) is running...
+29/03/2025 19:53:45 > Miner thread 1 (PID: 3544) is running...
+29/03/2025 19:53:45 > Miner thread 2 (PID: 3544) is running...
+29/03/2025 19:53:45 > Miner thread 5 (PID: 3544) is running...
+29/03/2025 19:54:00 > Miner thread 4 has finished.
+29/03/2025 19:54:00 > Miner thread 3 has finished.
+29/03/2025 19:54:00 > Miner thread 1 has finished.
+29/03/2025 19:54:00 > Miner thread 2 has finished.
+29/03/2025 19:54:00 > Miner thread 5 has finished.
+29/03/2025 19:54:00 > Todas as miner threads terminaram.
+
+29/03/2025 19:54:00 > Processo com PID 3544 terminou com código de saída 0
+29/03/2025 19:54:00 > Processo com PID 3545 terminou com código de saída 0
+29/03/2025 19:54:00 > Processo com PID 3546 terminou com código de saída 0
+29/03/2025 19:55:14 > Processo Controller iniciado (PID: 3565)
+29/03/2025 19:55:14 > Configurações atuais:
+29/03/2025 19:55:14 > NUM_MINERS: 5
+29/03/2025 19:55:14 > POOL_SIZE: 50
+29/03/2025 19:55:14 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:55:14 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:55:14 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:55:14 > Statistics iniciado com PID 3572
+29/03/2025 19:55:14 > Validator iniciado com PID 3571
+29/03/2025 19:55:14 > Miner iniciado com PID 3570
+29/03/2025 19:55:14 > Miner thread 3 (PID: 3570) is running...
+29/03/2025 19:55:14 > Miner thread 4 (PID: 3570) is running...
+29/03/2025 19:55:14 > Miner thread 5 (PID: 3570) is running...
+29/03/2025 19:55:15 > Miner thread 1 (PID: 3570) is running...
+29/03/2025 19:55:15 > Miner thread 2 (PID: 3570) is running...
+29/03/2025 19:55:22 > Processo Controller iniciado (PID: 3594)
+29/03/2025 19:55:22 > Configurações atuais:
+29/03/2025 19:55:22 > NUM_MINERS: 5
+29/03/2025 19:55:22 > POOL_SIZE: 50
+29/03/2025 19:55:22 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 19:55:23 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 19:55:23 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 19:55:23 > Miner iniciado com PID 3599
+29/03/2025 19:55:23 > Statistics iniciado com PID 3601
+29/03/2025 19:55:23 > Validator iniciado com PID 3600
+29/03/2025 19:55:23 > Miner thread 5 (PID: 3599) is running...
+29/03/2025 19:55:23 > Miner thread 4 (PID: 3599) is running...
+29/03/2025 19:55:23 > Miner thread 3 (PID: 3599) is running...
+29/03/2025 19:55:23 > Miner thread 2 (PID: 3599) is running...
+29/03/2025 19:55:23 > Miner thread 1 (PID: 3599) is running...
+29/03/2025 20:01:43 > Processo Controller iniciado (PID: 3635)
+29/03/2025 20:01:43 > Configurações atuais:
+29/03/2025 20:01:43 > NUM_MINERS: 5
+29/03/2025 20:01:43 > POOL_SIZE: 50
+29/03/2025 20:01:43 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 20:01:43 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 20:01:43 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 20:01:43 > Miner iniciado com PID 3639
+29/03/2025 20:01:43 > Validator iniciado com PID 3640
+29/03/2025 20:01:43 > Statistics iniciado com PID 3641
+29/03/2025 20:01:43 > Miner thread 5 (PID: 3639) is running...
+29/03/2025 20:01:43 > Miner thread 4 (PID: 3639) is running...
+29/03/2025 20:01:43 > Miner thread 3 (PID: 3639) is running...
+29/03/2025 20:01:43 > Miner thread 2 (PID: 3639) is running...
+29/03/2025 20:01:43 > Miner thread 1 (PID: 3639) is running...
+29/03/2025 21:12:43 > Processo Controller iniciado (PID: 3740)
+29/03/2025 21:12:43 > Configurações atuais:
+29/03/2025 21:12:43 > NUM_MINERS: 5
+29/03/2025 21:12:43 > POOL_SIZE: 50
+29/03/2025 21:12:43 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:12:43 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:12:43 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:12:43 > Miner iniciado com PID 3744
+29/03/2025 21:12:43 > Statistics iniciado com PID 3746
+29/03/2025 21:12:43 > Validator iniciado com PID 3745
+29/03/2025 21:12:43 > Miner thread 2 (PID: 3744) is running...
+29/03/2025 21:12:43 > Miner thread 5 (PID: 3744) is running...
+29/03/2025 21:12:43 > Miner thread 3 (PID: 3744) is running...
+29/03/2025 21:12:43 > Miner thread 4 (PID: 3744) is running...
+29/03/2025 21:12:44 > Miner thread 1 (PID: 3744) is running...
+29/03/2025 21:12:58 > Miner thread 2 has finished.
+29/03/2025 21:12:58 > Miner thread 5 has finished.
+29/03/2025 21:12:58 > Miner thread 3 has finished.
+29/03/2025 21:12:59 > Miner thread 4 has finished.
+29/03/2025 21:12:59 > Miner thread 1 has finished.
+29/03/2025 21:12:59 > Todas as miner threads terminaram.
+
+29/03/2025 21:12:59 > Processo com PID 3744 terminou com código de saída 0
+29/03/2025 21:12:59 > Processo com PID 3745 terminou com código de saída 0
+29/03/2025 21:12:59 > Processo com PID 3746 terminou com código de saída 0
+29/03/2025 21:14:23 > Processo Controller iniciado (PID: 3777)
+29/03/2025 21:14:23 > Configurações atuais:
+29/03/2025 21:14:23 > NUM_MINERS: 5
+29/03/2025 21:14:23 > POOL_SIZE: 50
+29/03/2025 21:14:23 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:14:23 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:14:23 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:14:23 > Statistics iniciado com PID 3783
+29/03/2025 21:14:23 > Validator iniciado com PID 3782
+29/03/2025 21:14:23 > Miner iniciado com PID 3781
+29/03/2025 21:14:23 > Miner thread 1 (PID: 3781) is running...
+29/03/2025 21:14:23 > Miner thread 5 (PID: 3781) is running...
+29/03/2025 21:14:23 > Miner thread 3 (PID: 3781) is running...
+29/03/2025 21:14:23 > Miner thread 2 (PID: 3781) is running...
+29/03/2025 21:14:23 > Miner thread 4 (PID: 3781) is running...
+29/03/2025 21:14:38 > Miner thread 1 has finished.
+29/03/2025 21:14:38 > Miner thread 5 has finished.
+29/03/2025 21:14:38 > Miner thread 3 has finished.
+29/03/2025 21:14:38 > Miner thread 2 has finished.
+29/03/2025 21:14:38 > Miner thread 4 has finished.
+29/03/2025 21:14:38 > Todas as miner threads terminaram.
+
+29/03/2025 21:14:38 > Processo com PID 3781 terminou com código de saída 0
+29/03/2025 21:14:38 > Processo com PID 3782 terminou com código de saída 0
+29/03/2025 21:14:38 > Processo com PID 3783 terminou com código de saída 0
+29/03/2025 21:16:53 > Processo Controller iniciado (PID: 3817)
+29/03/2025 21:16:53 > Configurações atuais:
+29/03/2025 21:16:53 > NUM_MINERS: 5
+29/03/2025 21:16:53 > POOL_SIZE: 50
+29/03/2025 21:16:53 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:16:53 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:16:53 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:16:53 > Miner iniciado com PID 3821
+29/03/2025 21:16:53 > Miner thread 1 (PID: 3821) is running...
+29/03/2025 21:16:53 > Statistics iniciado com PID 3823
+29/03/2025 21:16:53 > Validator iniciado com PID 3822
+29/03/2025 21:16:53 > Miner thread 2 (PID: 3821) is running...
+29/03/2025 21:16:53 > Miner thread 3 (PID: 3821) is running...
+29/03/2025 21:16:53 > Miner thread 4 (PID: 3821) is running...
+29/03/2025 21:16:53 > Miner thread 5 (PID: 3821) is running...
+29/03/2025 21:17:08 > Miner thread 1 has finished.
+29/03/2025 21:17:08 > Miner thread 2 has finished.
+29/03/2025 21:17:08 > Miner thread 3 has finished.
+29/03/2025 21:17:08 > Miner thread 4 has finished.
+29/03/2025 21:17:08 > Miner thread 5 has finished.
+29/03/2025 21:17:08 > Todas as miner threads terminaram.
+
+29/03/2025 21:17:08 > Processo com PID 3821 terminou com código de saída 0
+29/03/2025 21:17:08 > Processo com PID 3822 terminou com código de saída 0
+29/03/2025 21:17:08 > Processo com PID 3823 terminou com código de saída 0
+29/03/2025 21:17:36 > Processo Controller iniciado (PID: 3855)
+29/03/2025 21:17:36 > Configurações atuais:
+29/03/2025 21:17:36 > NUM_MINERS: 5
+29/03/2025 21:17:36 > POOL_SIZE: 50
+29/03/2025 21:17:36 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:17:36 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:17:36 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:17:36 > Validator iniciado com PID 3860
+29/03/2025 21:17:36 > Miner iniciado com PID 3859
+29/03/2025 21:17:36 > Statistics iniciado com PID 3861
+29/03/2025 21:17:36 > Miner thread 3 (PID: 3859) is running...
+29/03/2025 21:17:36 > Miner thread 5 (PID: 3859) is running...
+29/03/2025 21:17:36 > Miner thread 4 (PID: 3859) is running...
+29/03/2025 21:17:36 > Miner thread 2 (PID: 3859) is running...
+29/03/2025 21:17:36 > Miner thread 1 (PID: 3859) is running...
+29/03/2025 21:17:51 > Miner thread 3 has finished.
+29/03/2025 21:17:51 > Miner thread 5 has finished.
+29/03/2025 21:17:51 > Miner thread 4 has finished.
+29/03/2025 21:17:51 > Miner thread 2 has finished.
+29/03/2025 21:17:51 > Miner thread 1 has finished.
+29/03/2025 21:17:51 > Todas as miner threads terminaram.
+
+29/03/2025 21:17:51 > Processo com PID 3859 terminou com código de saída 0
+29/03/2025 21:17:51 > Processo com PID 3860 terminou com código de saída 0
+29/03/2025 21:17:51 > Processo com PID 3861 terminou com código de saída 0
+29/03/2025 21:24:17 > Processo Controller iniciado (PID: 3885)
+29/03/2025 21:24:17 > Configurações atuais:
+29/03/2025 21:24:17 > NUM_MINERS: 5
+29/03/2025 21:24:17 > POOL_SIZE: 50
+29/03/2025 21:24:17 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:24:17 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:24:17 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:24:17 > Validator iniciado com PID 3891
+29/03/2025 21:24:17 > Statistics iniciado com PID 3892
+29/03/2025 21:24:17 > Miner iniciado com PID 3890
+29/03/2025 21:24:17 > Miner thread 5 (PID: 3890) is running...
+29/03/2025 21:24:17 > Miner thread 4 (PID: 3890) is running...
+29/03/2025 21:24:17 > Miner thread 3 (PID: 3890) is running...
+29/03/2025 21:24:17 > Miner thread 2 (PID: 3890) is running...
+29/03/2025 21:24:17 > Miner thread 1 (PID: 3890) is running...
+29/03/2025 21:24:32 > Miner thread 5 has finished.
+29/03/2025 21:24:32 > Miner thread 4 has finished.
+29/03/2025 21:24:32 > Miner thread 3 has finished.
+29/03/2025 21:24:32 > Miner thread 2 has finished.
+29/03/2025 21:24:32 > Miner thread 1 has finished.
+29/03/2025 21:24:32 > Todas as miner threads terminaram.
+
+29/03/2025 21:24:32 > Processo com PID 3890 terminou com código de saída 0
+29/03/2025 21:24:32 > Processo com PID 3891 terminou com código de saída 0
+29/03/2025 21:24:32 > Processo com PID 3892 terminou com código de saída 0
+29/03/2025 21:24:43 > Processo Controller iniciado (PID: 3919)
+29/03/2025 21:24:43 > Configurações atuais:
+29/03/2025 21:24:43 > NUM_MINERS: 5
+29/03/2025 21:24:43 > POOL_SIZE: 50
+29/03/2025 21:24:43 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:24:43 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:24:43 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:24:43 > Miner iniciado com PID 3923
+29/03/2025 21:24:43 > Statistics iniciado com PID 3925
+29/03/2025 21:24:43 > Validator iniciado com PID 3924
+29/03/2025 21:24:43 > Miner thread 5 (PID: 3923) is running...
+29/03/2025 21:24:43 > Miner thread 4 (PID: 3923) is running...
+29/03/2025 21:24:43 > Miner thread 3 (PID: 3923) is running...
+29/03/2025 21:24:43 > Miner thread 1 (PID: 3923) is running...
+29/03/2025 21:24:43 > Miner thread 2 (PID: 3923) is running...
+29/03/2025 21:26:13 > Miner thread 5 has finished.
+29/03/2025 21:26:13 > Miner thread 4 has finished.
+29/03/2025 21:26:13 > Miner thread 3 has finished.
+29/03/2025 21:26:13 > Miner thread 1 has finished.
+29/03/2025 21:26:13 > Miner thread 2 has finished.
+29/03/2025 21:26:13 > Todas as miner threads terminaram.
+
+29/03/2025 21:26:13 > Processo com PID 3923 terminou com código de saída 0
+29/03/2025 21:26:13 > Processo com PID 3924 terminou com código de saída 0
+29/03/2025 21:26:13 > Processo com PID 3925 terminou com código de saída 0
+29/03/2025 21:30:16 > Processo Controller iniciado (PID: 3960)
+29/03/2025 21:30:16 > Configurações atuais:
+29/03/2025 21:30:16 > NUM_MINERS: 5
+29/03/2025 21:30:16 > POOL_SIZE: 50
+29/03/2025 21:30:16 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:30:16 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:30:16 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:30:16 > Statistics iniciado com PID 3966
+29/03/2025 21:30:16 > Validator iniciado com PID 3965
+29/03/2025 21:30:16 > Miner iniciado com PID 3964
+29/03/2025 21:30:16 > Miner thread 1 (PID: 3964) is running...
+29/03/2025 21:30:16 > Miner thread 2 (PID: 3964) is running...
+29/03/2025 21:30:16 > Miner thread 3 (PID: 3964) is running...
+29/03/2025 21:30:16 > Miner thread 4 (PID: 3964) is running...
+29/03/2025 21:30:16 > Miner thread 5 (PID: 3964) is running...
+29/03/2025 21:34:47 > Processo Controller iniciado (PID: 1816)
+29/03/2025 21:34:47 > Configurações atuais:
+29/03/2025 21:34:47 > NUM_MINERS: 5
+29/03/2025 21:34:47 > POOL_SIZE: 50
+29/03/2025 21:34:47 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:34:47 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:34:47 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:34:47 > Statistics iniciado com PID 1819
+29/03/2025 21:34:47 > Validator iniciado com PID 1818
+29/03/2025 21:34:47 > Miner iniciado com PID 1817
+29/03/2025 21:34:47 > Miner thread 1 (PID: 1817) is running...
+29/03/2025 21:34:47 > Miner thread 2 (PID: 1817) is running...
+29/03/2025 21:34:47 > Miner thread 3 (PID: 1817) is running...
+29/03/2025 21:34:47 > Miner thread 4 (PID: 1817) is running...
+29/03/2025 21:34:47 > Miner thread 5 (PID: 1817) is running...
+29/03/2025 21:36:17 > Miner thread 1 has finished.
+29/03/2025 21:36:17 > Miner thread 2 has finished.
+29/03/2025 21:36:17 > Miner thread 3 has finished.
+29/03/2025 21:36:17 > Miner thread 4 has finished.
+29/03/2025 21:36:17 > Miner thread 5 has finished.
+29/03/2025 21:36:17 > Todas as miner threads terminaram.
+
+29/03/2025 21:36:17 > Processo com PID 1817 terminou com código de saída 0
+29/03/2025 21:36:17 > Processo com PID 1818 terminou com código de saída 0
+29/03/2025 21:36:17 > Processo com PID 1819 terminou com código de saída 0
+29/03/2025 21:38:34 > Processo Controller iniciado (PID: 1854)
+29/03/2025 21:38:34 > Configurações atuais:
+29/03/2025 21:38:34 > NUM_MINERS: 5
+29/03/2025 21:38:34 > POOL_SIZE: 50
+29/03/2025 21:38:34 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:38:34 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:38:34 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:38:34 > Miner iniciado com PID 1855
+29/03/2025 21:38:34 > Validator iniciado com PID 1856
+29/03/2025 21:38:34 > Statistics iniciado com PID 1857
+29/03/2025 21:38:34 > Miner thread 5 (PID: 1855) is running...
+29/03/2025 21:38:34 > Miner thread 2 (PID: 1855) is running...
+29/03/2025 21:38:34 > Miner thread 1 (PID: 1855) is running...
+29/03/2025 21:38:34 > Miner thread 3 (PID: 1855) is running...
+29/03/2025 21:38:34 > Miner thread 4 (PID: 1855) is running...
+29/03/2025 21:40:04 > Miner thread 5 has finished.
+29/03/2025 21:40:04 > Miner thread 2 has finished.
+29/03/2025 21:40:04 > Miner thread 1 has finished.
+29/03/2025 21:40:04 > Miner thread 3 has finished.
+29/03/2025 21:40:04 > Miner thread 4 has finished.
+29/03/2025 21:40:04 > Todas as miner threads terminaram.
+
+29/03/2025 21:40:04 > Processo com PID 1855 terminou com código de saída 0
+29/03/2025 21:40:04 > Processo com PID 1856 terminou com código de saída 0
+29/03/2025 21:40:04 > Processo com PID 1857 terminou com código de saída 0
+29/03/2025 21:41:23 > Processo Controller iniciado (PID: 1909)
+29/03/2025 21:41:23 > Configurações atuais:
+29/03/2025 21:41:23 > NUM_MINERS: 5
+29/03/2025 21:41:23 > POOL_SIZE: 50
+29/03/2025 21:41:23 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:41:23 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:41:23 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:41:23 > Miner iniciado com PID 1910
+29/03/2025 21:41:23 > Validator iniciado com PID 1911
+29/03/2025 21:41:23 > Statistics iniciado com PID 1912
+29/03/2025 21:41:23 > Miner thread 5 (PID: 1910) is running...
+29/03/2025 21:41:23 > Miner thread 4 (PID: 1910) is running...
+29/03/2025 21:41:23 > Miner thread 2 (PID: 1910) is running...
+29/03/2025 21:41:23 > Miner thread 1 (PID: 1910) is running...
+29/03/2025 21:41:23 > Miner thread 3 (PID: 1910) is running...
+29/03/2025 21:42:53 > Miner thread 5 has finished.
+29/03/2025 21:42:53 > Miner thread 4 has finished.
+29/03/2025 21:42:53 > Miner thread 2 has finished.
+29/03/2025 21:42:53 > Miner thread 1 has finished.
+29/03/2025 21:42:53 > Miner thread 3 has finished.
+29/03/2025 21:42:53 > Todas as miner threads terminaram.
+
+29/03/2025 21:42:53 > Processo com PID 1910 terminou com código de saída 0
+29/03/2025 21:42:53 > Processo com PID 1911 terminou com código de saída 0
+29/03/2025 21:42:53 > Processo com PID 1912 terminou com código de saída 0
+29/03/2025 21:43:00 > Processo Controller iniciado (PID: 1938)
+29/03/2025 21:43:00 > Configurações atuais:
+29/03/2025 21:43:00 > NUM_MINERS: 5
+29/03/2025 21:43:00 > POOL_SIZE: 50
+29/03/2025 21:43:00 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:43:00 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:43:00 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:43:00 > Validator iniciado com PID 1940
+29/03/2025 21:43:00 > Miner iniciado com PID 1939
+29/03/2025 21:43:00 > Statistics iniciado com PID 1941
+29/03/2025 21:43:00 > Miner thread 3 (PID: 1939) is running...
+29/03/2025 21:43:00 > Miner thread 2 (PID: 1939) is running...
+29/03/2025 21:43:00 > Miner thread 5 (PID: 1939) is running...
+29/03/2025 21:43:00 > Miner thread 4 (PID: 1939) is running...
+29/03/2025 21:43:00 > Miner thread 1 (PID: 1939) is running...
+29/03/2025 21:47:02 > Processo Controller iniciado (PID: 1977)
+29/03/2025 21:47:02 > Configurações atuais:
+29/03/2025 21:47:02 > NUM_MINERS: 5
+29/03/2025 21:47:02 > POOL_SIZE: 50
+29/03/2025 21:47:02 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:47:02 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:47:02 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:47:02 > Validator iniciado com PID 1979
+29/03/2025 21:47:02 > Statistics iniciado com PID 1980
+29/03/2025 21:47:02 > Miner iniciado com PID 1978
+29/03/2025 21:47:02 > Miner thread 5 (PID: 1978) is running...
+29/03/2025 21:47:02 > Miner thread 4 (PID: 1978) is running...
+29/03/2025 21:47:02 > Miner thread 3 (PID: 1978) is running...
+29/03/2025 21:47:02 > Miner thread 2 (PID: 1978) is running...
+29/03/2025 21:47:02 > Miner thread 1 (PID: 1978) is running...
+29/03/2025 21:55:22 > Miner thread 5 has finished.
+29/03/2025 21:55:22 > Miner thread 4 has finished.
+29/03/2025 21:55:22 > Miner thread 3 has finished.
+29/03/2025 21:55:22 > Miner thread 2 has finished.
+29/03/2025 21:55:22 > Miner thread 1 has finished.
+29/03/2025 21:55:22 > Todas as miner threads terminaram.
+
+29/03/2025 21:55:22 > Processo com PID 1978 terminou com código de saída 0
+29/03/2025 21:55:22 > Processo com PID 1979 terminou com código de saída 0
+29/03/2025 21:55:22 > Processo com PID 1980 terminou com código de saída 0
+29/03/2025 21:55:27 > Processo Controller iniciado (PID: 2054)
+29/03/2025 21:55:27 > Configurações atuais:
+29/03/2025 21:55:27 > NUM_MINERS: 5
+29/03/2025 21:55:27 > POOL_SIZE: 50
+29/03/2025 21:55:27 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 21:55:27 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 21:55:27 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 21:55:27 > Validator iniciado com PID 2056
+29/03/2025 21:55:27 > Miner iniciado com PID 2055
+29/03/2025 21:55:27 > Miner thread 5 (PID: 2055) is running...
+29/03/2025 21:55:27 > Statistics iniciado com PID 2057
+29/03/2025 21:55:27 > Miner thread 4 (PID: 2055) is running...
+29/03/2025 21:55:27 > Miner thread 2 (PID: 2055) is running...
+29/03/2025 21:55:27 > Miner thread 3 (PID: 2055) is running...
+29/03/2025 21:55:27 > Miner thread 1 (PID: 2055) is running...
+29/03/2025 22:03:10 > Processo Controller iniciado (PID: 2115)
+29/03/2025 22:03:10 > Configurações atuais:
+29/03/2025 22:03:10 > NUM_MINERS: 5
+29/03/2025 22:03:10 > POOL_SIZE: 50
+29/03/2025 22:03:10 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 22:03:10 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 22:03:10 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 22:03:10 > Validator iniciado com PID 2117
+29/03/2025 22:03:10 > Statistics iniciado com PID 2118
+29/03/2025 22:03:10 > Miner iniciado com PID 2116
+29/03/2025 22:03:10 > Miner thread 5 (PID: 2116) is running...
+29/03/2025 22:03:10 > Miner thread 4 (PID: 2116) is running...
+29/03/2025 22:03:10 > Miner thread 1 (PID: 2116) is running...
+29/03/2025 22:03:10 > Miner thread 2 (PID: 2116) is running...
+29/03/2025 22:03:10 > Miner thread 3 (PID: 2116) is running...
+29/03/2025 22:05:47 > Processo Controller iniciado (PID: 2127)
+29/03/2025 22:05:47 > Configurações atuais:
+29/03/2025 22:05:47 > NUM_MINERS: 5
+29/03/2025 22:05:47 > POOL_SIZE: 50
+29/03/2025 22:05:47 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 22:05:47 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 22:05:47 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 22:05:47 > Miner iniciado com PID 2128
+29/03/2025 22:05:47 > Statistics iniciado com PID 2130
+29/03/2025 22:05:47 > Validator iniciado com PID 2129
+29/03/2025 22:05:47 > Miner thread 4 (PID: 2128) is running...
+29/03/2025 22:05:47 > Miner thread 3 (PID: 2128) is running...
+29/03/2025 22:05:47 > Miner thread 5 (PID: 2128) is running...
+29/03/2025 22:05:47 > Miner thread 1 (PID: 2128) is running...
+29/03/2025 22:05:47 > Miner thread 2 (PID: 2128) is running...
+29/03/2025 22:09:06 > Processo Controller iniciado (PID: 2156)
+29/03/2025 22:09:06 > Configurações atuais:
+29/03/2025 22:09:06 > NUM_MINERS: 5
+29/03/2025 22:09:06 > POOL_SIZE: 50
+29/03/2025 22:09:06 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 22:09:06 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 22:09:06 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 22:09:10 > Processo Controller iniciado (PID: 2158)
+29/03/2025 22:09:10 > Configurações atuais:
+29/03/2025 22:09:10 > NUM_MINERS: 5
+29/03/2025 22:09:10 > POOL_SIZE: 50
+29/03/2025 22:09:10 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 22:09:10 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 22:09:10 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 22:09:10 > Miner iniciado com PID 2159
+29/03/2025 22:09:10 > Validator iniciado com PID 2160
+29/03/2025 22:09:10 > Statistics iniciado com PID 2161
+29/03/2025 22:09:10 > Miner thread 5 (PID: 2159) is running...
+29/03/2025 22:09:10 > Miner thread 2 (PID: 2159) is running...
+29/03/2025 22:09:10 > Miner thread 4 (PID: 2159) is running...
+29/03/2025 22:09:10 > Miner thread 3 (PID: 2159) is running...
+29/03/2025 22:09:10 > Miner thread 1 (PID: 2159) is running...
+29/03/2025 22:09:16 > Processo Controller iniciado (PID: 2169)
+29/03/2025 22:09:16 > Configurações atuais:
+29/03/2025 22:09:16 > NUM_MINERS: 5
+29/03/2025 22:09:16 > POOL_SIZE: 50
+29/03/2025 22:09:16 > TRANSACTIONS_PER_BLOCK: 10
+29/03/2025 22:09:16 > BLOCKCHAIN_BLOCKS: 50000
+29/03/2025 22:09:16 > TRANSACTION_POOL_SIZE: 10000
+
+29/03/2025 22:09:16 > Miner iniciado com PID 2170
+29/03/2025 22:09:16 > Miner thread 1 (PID: 2170) is running...
+29/03/2025 22:09:16 > Statistics iniciado com PID 2172
+29/03/2025 22:09:16 > Miner thread 2 (PID: 2170) is running...
+29/03/2025 22:09:16 > Miner thread 3 (PID: 2170) is running...
+29/03/2025 22:09:16 > Validator iniciado com PID 2171
+29/03/2025 22:09:16 > Miner thread 4 (PID: 2170) is running...
+29/03/2025 22:09:16 > Miner thread 5 (PID: 2170) is running...
