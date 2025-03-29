@@ -14,7 +14,7 @@
 #include <time.h>
 #include <semaphore.h>
 
-#include "Controller.h"
+#include "../include/Controller.h"
 
 void generate_transaction(Transaction *tx, int id, int reward)
 {
@@ -29,8 +29,6 @@ void generate_transaction(Transaction *tx, int id, int reward)
 
 int main(int argc, char *argv[])
 {
-
-    printf("%s", SHM_TRANSACTIONS_POOL);
 
     int shm_fd;
     sem_t *sem_tx_pool;

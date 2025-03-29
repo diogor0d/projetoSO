@@ -11,7 +11,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra
 
 # Source files
-SRCS = Controller.c Miner.c
+SRCS = src/Controller.c src/Miner.c
 
 # Output executable
 TARGET = DeiChain
@@ -19,7 +19,7 @@ TARGET = DeiChain
 # Build target
 $(TARGET): $(SRCS)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lrt -pthread
-	$(CC) $(CFLAGS) -o txgen TxGen.c -lrt -pthread -g
+	$(CC) $(CFLAGS) -o txgen src/TxGen.c -lrt -pthread -g
 
 # Clean target
 clean:

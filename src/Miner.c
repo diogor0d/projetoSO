@@ -9,25 +9,27 @@
 #include <unistd.h>
 #include <stdlib.h>
 
-#include "Controller.h"
+#include "../include/Controller.h"
 
 typedef struct
 {
     int thread_id;
     sem_t *sem_log_file;
+    FILE *log_file;
 } MinerThreadArgs;
 
 void *miner_thread(void *arg)
 {
-    MinerThreadArgs *args = (MinerThreadArgs *)arg; // Cast the argument to the correct type
+    MinerThreadArgs *args = (MinerThreadArgs *)arg;
     int thread_id = args->thread_id;
     sem_t *sem_log_file = args->sem_log_file;
+    FILE *log_file = args->log_file;
 
-    log_info(sem_log_file, "Miner thread %d (PID: %d) is running...", thread_id, getpid());
+    log_info(sem_log_file, log_file, "Miner thread %d (PID: %d) is running...", thread_id, getpid());
 
     sleep(500);
 
-    log_info(sem_log_file, "Miner thread %d has finished.", thread_id);
+    log_info(sem_log_file, log_file, "Miner thread %d has finished.", thread_id);
     return NULL;
 }
 
@@ -36,7 +38,7 @@ void miner(int num_miners)
     pthread_t threads[num_miners];
     MinerThreadArgs thread_args[num_miners];
 
-    // Open the semaphore for logs
+    // Abrir o semaforo para logs
     sem_t *sem_log_file = sem_open(SEM_LOG_FILE, 0);
     if (sem_log_file == SEM_FAILED)
     {
@@ -44,14 +46,17 @@ void miner(int num_miners)
         return;
     }
 
+    FILE *log_file = open_log_file();
+
     for (int i = 0; i < num_miners; i++)
     {
         thread_args[i].thread_id = i + 1;
         thread_args[i].sem_log_file = sem_log_file;
+        thread_args[i].log_file = log_file;
 
         if (pthread_create(&threads[i], NULL, miner_thread, &thread_args[i]) != 0)
         {
-            log_info(sem_log_file, "Erro ao criar miner thread");
+            log_info(sem_log_file, log_file, "Erro ao criar miner thread");
             return;
         }
     }
@@ -61,8 +66,8 @@ void miner(int num_miners)
         pthread_join(threads[i], NULL);
     }
 
-    log_info(sem_log_file, "Todas as miner threads terminaram.\n");
+    log_info(sem_log_file, log_file, "Todas as miner threads terminaram.\n");
 
-    // Close the semaphore for logs
+    // fechar o semaforo para logos
     sem_close(sem_log_file);
 }
