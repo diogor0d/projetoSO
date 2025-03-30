@@ -30,7 +30,7 @@ void *miner_thread(void *arg)
     sleep(500);
 
     log_info(sem_log_file, log_file, "Miner thread %d has finished.", thread_id);
-    return NULL;
+    pthread_exit(NULL);
 }
 
 void miner(int num_miners)
@@ -38,7 +38,7 @@ void miner(int num_miners)
     pthread_t threads[num_miners];
     MinerThreadArgs thread_args[num_miners];
 
-    // Abrir o semaforo para logs
+    // Abrir o semaforo para logs (já existente)
     sem_t *sem_log_file = sem_open(SEM_LOG_FILE, 0);
     if (sem_log_file == SEM_FAILED)
     {
@@ -63,11 +63,12 @@ void miner(int num_miners)
 
     for (int i = 0; i < num_miners; i++)
     {
+        // espera pelo fim de cada thread
         pthread_join(threads[i], NULL);
     }
 
     log_info(sem_log_file, log_file, "Todas as miner threads terminaram.\n");
 
-    // fechar o semaforo para logos
+    // fechar o semaforo para logs
     sem_close(sem_log_file);
 }

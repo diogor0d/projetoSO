@@ -21,20 +21,20 @@
 
 typedef struct
 {
-    int id;
-    int reward;
-    int sender;
-    int receiver;
-    int age;
+    unsigned long long id;
+    unsigned int reward;
+    unsigned int sender;
+    unsigned int receiver;
+    unsigned int age;
     double value;
-    time_t created_at;
+    unsigned long long created_at;
 } Transaction;
 
 typedef struct
 {
-    int size; // capacidade da pool
-    int count;
-    int current_block_id;
+    unsigned int size; // capacidade da pool
+    unsigned int count;
+    unsigned long long current_block_id;
     Transaction transactions[];
 } TransactionPool;
 

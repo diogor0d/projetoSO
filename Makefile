@@ -16,10 +16,13 @@ SRCS = src/Controller.c src/Miner.c
 # Output executable
 TARGET = DeiChain
 
+# Phony target to force recompilation
+.PHONY: all clean
+
 # Build target
-$(TARGET): $(SRCS)
+all:
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lrt -pthread
-	$(CC) $(CFLAGS) -o txgen src/TxGen.c -lrt -pthread -g
+	$(CC) $(CFLAGS) -o txgen src/TxGen.c -lrt -pthread
 
 # Clean target
 clean:

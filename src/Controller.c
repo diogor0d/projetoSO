@@ -51,6 +51,7 @@ int is_positive_integer(const char *str)
     return 1;
 }
 
+// Função para escrever mensagens de log no logfile e no stdout
 void log_info(sem_t *sem_log_file, FILE *log_file, const char *format, ...)
 {
     char *log_message;
@@ -178,6 +179,8 @@ int main()
     int shm_size;
 
     // Criação dos semáforos
+
+    // semaforo transactions pool
     sem_t *sem_transactions_pool = sem_open(SEM_TRANSACTIONS_POOL, O_CREAT, 0666, 1);
     if (sem_transactions_pool == SEM_FAILED)
     {
@@ -186,6 +189,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    // semaforo ledger
     sem_t *sem_ledger = sem_open(SEM_LEDGER, O_CREAT, 0666, 1);
     if (sem_ledger == SEM_FAILED)
     {
@@ -195,6 +199,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    // shared memory transactions pool
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
     if (shm_transactionspool_fd == -1)
     {
@@ -313,6 +318,8 @@ int main()
     }
 
     // Unmap e fecho dos segmentos de memoria partilhada
+
+    // transactionspool
     if (munmap(shm_transactionspool_base, shm_size) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao desmapear SHM_TRANSACTIONSPOOL");
@@ -326,6 +333,7 @@ int main()
         log_info(sem_log_file, log_file, "Erro ao desvincular SHM_TRANSACTIONSPOOL");
     }
 
+    // ledger
     if (munmap(NULL, shm_size) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao desmapear SHM_LEDGER");
@@ -340,28 +348,36 @@ int main()
     }
 
     // Fechar os semáforos
+
+    // transactions pool
     if (sem_close(sem_transactions_pool) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao fechar semáforo SEM_TRANSACTIONS_POOL");
     }
+    // ledger
     if (sem_close(sem_ledger) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao fechar semáforo SEM_LEDGER");
     }
+    // log file
     if (sem_close(sem_log_file) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao fechar semáforo SEM_LOG_FILE");
     }
 
     // Remover os semáforos do sistema
+
+    // transactions pool
     if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao desvincular semáforo SEM_TRANSACTIONS_POOL");
     }
+    // ledger
     if (sem_unlink(SEM_LEDGER) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao desvincular semáforo SEM_LEDGER");
     }
+    // log file
     if (sem_unlink(SEM_LOG_FILE) == -1)
     {
         log_info(sem_log_file, log_file, "Erro ao desvincular semáforo SEM_LOG_FILE");

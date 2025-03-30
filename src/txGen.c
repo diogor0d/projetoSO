@@ -13,25 +13,70 @@
 #include <string.h>
 #include <time.h>
 #include <semaphore.h>
+#include <signal.h>
 
 #include "../include/Controller.h"
 
-void generate_transaction(Transaction *tx, int id, int reward)
+int tx_number = 0;               // incremental value for transaction id
+int shm_fd = 0;                  // file descriptor para a shared memory
+sem_t *sem_tx_pool = NULL;       // semáforo para a transactions pool
+void *shm_base = NULL;           // ponteiro para a memória partilhada
+size_t shm_size = 0;             // tamanho da memória partilhada
+TransactionPool *tx_pool = NULL; // ponteiro para a pool de transações
+
+unsigned long long current_time_in_milliseconds()
 {
-    tx->id = id;
+    struct timespec ts;
+    clock_gettime(CLOCK_REALTIME, &ts);                                     // obtem o tempo atual
+    return (unsigned long long)(ts.tv_sec) * 1000 + (ts.tv_nsec) / 1000000; // converter pala milisegundos
+}
+
+void sigint(int signum)
+{
+    (void)signum; // ignorar o sinal, não é necessário para o tratamento
+    printf("\nDeseja encerrar o programa? (s=sim)\n");
+    char input = getchar();
+    if (input == 's' || input == 'S')
+    {
+        printf("A terminar o programa...\n");
+
+        // Fechar o semáforo
+        if (sem_close(sem_tx_pool) == -1)
+        {
+            perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+        }
+        // Unmap e fecho da shared memory
+        if (munmap(tx_pool, shm_size) == -1)
+        {
+            perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
+        }
+        if (close(shm_fd) == -1)
+        {
+            perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
+        }
+
+        exit(0);
+    }
+}
+
+void generate_transaction(Transaction *tx, int reward)
+{
+
+    unsigned long long t_id = getpid() * 1000 + current_time_in_milliseconds() + tx_number;
+    tx_number++;
+    tx->id = t_id;
     tx->reward = reward;
-    tx->sender = rand() % 1000;
-    tx->receiver = rand() % 1000;
+    tx->sender = getpid();
+    tx->receiver = rand() % 10000;
     tx->age = 0;
     tx->value = (double)(rand() % 10000) / 100.0;
-    tx->created_at = time(NULL);
+    tx->created_at = current_time_in_milliseconds();
 }
 
 int main(int argc, char *argv[])
 {
 
-    int shm_fd;
-    sem_t *sem_tx_pool;
+    signal(SIGINT, sigint); // redirecionar o sinal SIGINT para permitir a interrupção do programa
 
     // Ler e processar os argumentos da linha de comando
     if (argc != 3)
@@ -62,7 +107,7 @@ int main(int argc, char *argv[])
     // Como do ponto de vista do txgen o poolsize é desconhecido, fazemos um map inicial para obter as caracteristicas da transaction pool (nomeadamente o tamanho) e obtida esta informação, fazemos um novo map com o tamanho total da memória partilhada a ser utilizada.
 
     // Mapear apenas o cabeçalho (TransactionPool) para ler o tamanho
-    void *shm_base = mmap(NULL, sizeof(TransactionPool), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    shm_base = mmap(NULL, sizeof(TransactionPool), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (shm_base == MAP_FAILED)
     {
         perror("Erro ao mapear SHM_TRANSACTIONS_POOL\n");
@@ -73,9 +118,9 @@ int main(int argc, char *argv[])
     printf("Mapeamento da memoria partilhada inicial efetuado...\n");
 
     // Ler o tamanho da pool de transações
-    TransactionPool *tx_pool = (TransactionPool *)shm_base;
-    int pool_size = tx_pool->size;
-    printf("Leitura do tamanho da poolsize efetuado...\n");
+    tx_pool = (TransactionPool *)shm_base;
+    unsigned int pool_size = tx_pool->size;
+    printf("Leitura do tamanho da pool efetuado...\n");
 
     printf("Tamanho da transactions pool: %d\n", pool_size);
 
@@ -90,7 +135,7 @@ int main(int argc, char *argv[])
     printf("Desmapeamento efetuado...\n");
 
     // Calcular o tamanho total da memória partilhada
-    size_t shm_size = sizeof(TransactionPool) + (pool_size * sizeof(Transaction));
+    shm_size = sizeof(TransactionPool) + (pool_size * sizeof(Transaction));
 
     printf("Redimensionamento da memoria partilhada em curso...\n");
     // Mapear novamente com o tamanho total
@@ -107,14 +152,8 @@ int main(int argc, char *argv[])
 
     srand(time(NULL));
 
-    // numero incremental para determinar o transaction id posteriormente
-    int tx_number = 0;
-
     while (1)
     {
-
-        // Adicionar nova transação à transactions pool
-        printf("Adicionando nova transação à transactions pool...\n");
 
         // Bloquear o semáforo antes de escrever na pool
         if (sem_wait(sem_tx_pool) == -1)
@@ -126,19 +165,17 @@ int main(int argc, char *argv[])
         if (tx_pool->count < pool_size)
         {
 
-            for (int i = 0; i < tx_pool->size; i++)
+            for (unsigned int i = 0; i < tx_pool->size; i++)
             {
                 if (tx_pool->transactions[i].id == 0) // verificação para assegurar que o lugar na lista está livre
                 {
-                    printf("Lugar livre\n");
 
                     Transaction new_tx;
-                    int t_id = getpid() * 100000 + (int)time(NULL) % 100000000 + tx_number; // acrescentou-se o tempo para garantir unicidade
-                    generate_transaction(&new_tx, t_id, reward);
+                    // acrescentou-se o tempo para garantir unicidade dos ids
+                    generate_transaction(&new_tx, reward);
                     tx_pool->transactions[i] = new_tx;
                     tx_pool->count++;
-                    tx_number++;
-                    printf("Transação Gerada > ID: %d, Reward: %d\n", new_tx.id, new_tx.reward);
+                    printf("Transação Gerada > ID: %llu, Reward: %d\n", new_tx.id, new_tx.reward);
                     break;
                 }
             }
@@ -168,8 +205,11 @@ int main(int argc, char *argv[])
         perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
     }
 
-    // Fechar o semáforo
-    sem_close(sem_tx_pool);
+    // fechar o semaforo da transactions pool
+    if (sem_close(sem_tx_pool) == -1)
+    {
+        perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+    }
 
     return 0;
 }
