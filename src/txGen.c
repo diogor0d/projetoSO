@@ -87,6 +87,22 @@ int main(int argc, char *argv[])
     int reward = atoi(argv[1]);
     int sleep_time = atoi(argv[2]);
 
+    // Verificar se o reward está entre 1 e 3
+
+    if (reward < 1 || reward > 3)
+    {
+        fprintf(stderr, "O reward deve ser um valor entre 1 e 3.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    // Verificar se o sleep time está entre 200 e 3000
+
+    if (sleep_time < 200 || sleep_time > 3000)
+    {
+        fprintf(stderr, "O sleep time deve ser um valor entre 200 e 3000.\n");
+        exit(EXIT_FAILURE);
+    }
+
     // Abrir o semáforo para a transactions pool
     sem_tx_pool = sem_open(SEM_TRANSACTIONS_POOL, 0);
     if (sem_tx_pool == SEM_FAILED)
