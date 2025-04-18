@@ -34,29 +34,24 @@ unsigned long long current_time_in_milliseconds()
 void sigint(int signum)
 {
     (void)signum; // ignorar o sinal, não é necessário para o tratamento
-    printf("\nDeseja encerrar o programa? (s=sim)\n");
-    char input = getchar();
-    if (input == 's' || input == 'S')
+    printf("A terminar o programa...\n");
+
+    // Fechar o semáforo
+    if (sem_close(sem_tx_pool) == -1)
     {
-        printf("A terminar o programa...\n");
-
-        // Fechar o semáforo
-        if (sem_close(sem_tx_pool) == -1)
-        {
-            perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
-        }
-        // Unmap e fecho da shared memory
-        if (munmap(tx_pool, shm_size) == -1)
-        {
-            perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
-        }
-        if (close(shm_fd) == -1)
-        {
-            perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
-        }
-
-        exit(0);
+        perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
     }
+    // Unmap e fecho da shared memory
+    if (munmap(tx_pool, shm_size) == -1)
+    {
+        perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
+    }
+    if (close(shm_fd) == -1)
+    {
+        perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
+    }
+
+    exit(0);
 }
 
 void generate_transaction(Transaction *tx, int reward)

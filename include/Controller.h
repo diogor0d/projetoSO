@@ -39,6 +39,5 @@ typedef struct
 } TransactionPool;
 
 FILE *open_log_file();
-void log_info(sem_t *sem_log_file, FILE *log_file, const char *format, ...);
 
 #endif // CONTROLLER_H
