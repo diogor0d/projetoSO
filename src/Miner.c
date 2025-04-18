@@ -11,6 +11,7 @@
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <signal.h>
 
 #include "../include/Controller.h"
 
@@ -65,6 +66,34 @@ static void log_info(const char *format, ...)
     free(log_message);
 }
 
+void cleanup()
+{
+    // Close the log file
+    if (log_file)
+    {
+        fclose(log_file);
+    }
+
+    // fechar o semaforo para logs
+    sem_close(sem_log_file);
+}
+
+void sigterm(int signum)
+{
+    (void)signum; // Ignore the signal parameter
+
+    // Perform any necessary cleanup specific to the child process
+    if (log_file)
+    {
+        fclose(log_file);
+    }
+
+    cleanup(); // Call the cleanup function to close the log file and semaphores
+
+    // Exit the process
+    exit(EXIT_SUCCESS);
+}
+
 void *miner_thread(void *arg)
 {
     MinerThreadArgs *args = (MinerThreadArgs *)arg;
@@ -80,6 +109,9 @@ void *miner_thread(void *arg)
 
 void miner(int num_miners)
 {
+    // tratamento de sinais
+    signal(SIGTERM, sigterm); // Register SIGTERM handler
+
     pthread_t threads[num_miners];
     MinerThreadArgs thread_args[num_miners];
 
@@ -97,7 +129,6 @@ void miner(int num_miners)
         perror("MINER : Erro ao abrir o ficheiro de log");
         return;
     }
-
     TIPO_PROCESSO = "MINER";
 
     for (int i = 0; i < num_miners; i++)
@@ -120,5 +151,5 @@ void miner(int num_miners)
     log_info("Todas as miner threads terminaram.\n");
 
     // fechar o semaforo para logs
-    sem_close(sem_log_file);
+    cleanup();
 }
