@@ -70,7 +70,7 @@ void generate_transaction(Transaction *tx, int reward)
     tx->receiver = rand() % 10000;
     tx->age = 0;
     tx->value = (double)(rand() % 10000) / 100.0;
-    tx->created_at = current_time_in_milliseconds();
+    tx->timestamp = time(NULL);
 }
 
 int main(int argc, char *argv[])

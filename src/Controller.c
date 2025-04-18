@@ -334,7 +334,7 @@ int main()
         log_info("Erro na criação de SHM_TRANSACTIONSPOOL");
         exit(EXIT_FAILURE);
     }
-    shm_transactionspool_size = sizeof(TransactionPool) + (TRANSACTION_POOL_SIZE * sizeof(Transaction));
+    shm_transactionspool_size = sizeof(TransactionPool) + (TRANSACTION_POOL_SIZE * sizeof(PendingTransaction));
     if (ftruncate(shm_transactionspool_fd, shm_transactionspool_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_TRANSACTIONSPOOL");
@@ -356,8 +356,6 @@ int main()
     memset(shm_transactionspool_base, 0, shm_transactionspool_size);
     // Initialize the TransactionPool in shared memory
     TransactionPool *tx_pool = (TransactionPool *)shm_transactionspool_base;
-    tx_pool->current_block_id = 0;
-    tx_pool->count = 0;
     tx_pool->size = TRANSACTION_POOL_SIZE;
     //  desbloquear o semaforo após a escrita
     if (sem_post(sem_transactions_pool) == -1)

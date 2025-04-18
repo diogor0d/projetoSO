@@ -5,6 +5,10 @@
 */
 
 #include <semaphore.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #ifndef CONTROLLER_H
 #define CONTROLLER_H
@@ -19,28 +23,61 @@
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
 
+#define HASH_SIZE 65 // SHA256_DIGEST_LENGTH * 2 + 1
+#define TXB_ID_LEN 64
+
 extern int NUM_MINERS;
-// extern size_t TRANSACTIONS_PER_BLOCK;
+extern int TRANSACTIONS_PER_BLOCK;
+extern int BLOCKCHAIN_BLOCKS;
 
 typedef struct
 {
     unsigned long long id;
+
     unsigned int reward;
-    unsigned int sender;
-    unsigned int receiver;
-    unsigned int age;
-    double value;
-    unsigned long long created_at;
+    float value;
+    time_t timestamp;
 } Transaction;
 
 typedef struct
 {
-    unsigned int size; // capacidade da pool
-    unsigned int count;
-    unsigned long long current_block_id;
-    Transaction transactions[];
+    int empty; // indica se a posição está vazia ou não
+    unsigned int age;
+    Transaction tx;
+} PendingTransaction;
+
+typedef struct
+{
+    unsigned int size;                            // capacidade da pool
+    PendingTransaction *transactions_pending_set; // array de transações pendentes
 } TransactionPool;
 
-FILE *open_log_file();
+typedef struct
+{
+    char txb_id[TXB_ID_LEN];
+    char previous_block_hash[HASH_SIZE];
+    time_t timestamp;
+    Transaction *transactions;
+    unsigned int nonce;
+} TransactionBlock;
+
+// Inline function to compute the size of a TransactionBlock
+static inline size_t get_transaction_block_size()
+{
+    if (TRANSACTIONS_PER_BLOCK == 0)
+    {
+        perror("Must set the 'TRANSACTIONS_PER_BLOCK' variable before using!\n");
+        exit(-1);
+    }
+    return sizeof(TransactionBlock) + TRANSACTIONS_PER_BLOCK * sizeof(Transaction);
+}
+
+typedef struct
+{
+
+}
+
+FILE *
+open_log_file();
 
 #endif // CONTROLLER_H

@@ -2,7 +2,8 @@
 #ifndef POW_H
 #define POW_H
 
-#include "../../include/PoW/deichain.h"
+// #include "../../include/PoW/deichain.h"
+#include "../../include/Controller.h"
 
 #define POW_MAX_OPS 10000000
 

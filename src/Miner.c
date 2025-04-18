@@ -17,6 +17,7 @@
 #include <openssl/sha.h>
 
 #include "../include/Controller.h"
+#include "../include/PoW/pow.h"
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
@@ -24,6 +25,7 @@ static char *TIPO_PROCESSO = NULL;
 
 // aceder a variavel globais do controller
 int NUM_MINERS;
+int LEDGER_SIZE;
 int TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
 
@@ -137,8 +139,13 @@ void *miner_thread(void *arg)
 
     while (!stop_threads)
     {
-        // Simulate work
-        sleep(20);
+        // selecionar transacoes da transactions pool
+
+        // criar o bloco
+        TransactionBlock block;
+        snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, rand() % 1000);
+
+        // computar PoW
     }
 
     log_info("Miner thread %d terminou.", thread_id);

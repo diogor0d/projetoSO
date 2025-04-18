@@ -8,7 +8,8 @@
 #include <string.h>
 #include <time.h>
 
-#include "../../include/PoW/deichain.h"
+// #include "../../include/PoW/deichain.h"
+#include "../../include/Controller.h"
 
 int get_max_transaction_reward(const TransactionBlock *block,
                                const int txs_per_block)
@@ -50,7 +51,7 @@ unsigned char *serialize_block(const TransactionBlock *block, size_t *sz_buf)
   memcpy(p, &block->timestamp, sizeof(time_t));
   p += sizeof(time_t);
 
-  for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; ++i)
+  for (int i = 0; i < TRANSACTIONS_PER_BLOCK; ++i)
   {
     memcpy(p, &block->transactions[i], sizeof(Transaction));
     p += sizeof(Transaction);
