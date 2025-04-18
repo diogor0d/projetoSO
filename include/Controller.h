@@ -19,6 +19,9 @@
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
 
+extern int NUM_MINERS;
+// extern size_t TRANSACTIONS_PER_BLOCK;
+
 typedef struct
 {
     unsigned long long id;

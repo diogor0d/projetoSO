@@ -30,10 +30,11 @@ int TRANSACTION_POOL_SIZE = 10000; // valor por omissão
 
 // Definições de semáforos e memória partilhada para acesso global
 
-sem_t *sem_transactions_pool, *sem_ledger;
-void *shm_transactionspool_base = NULL;
-void *shm_ledger_base = NULL;
-int shm_transactionspool_fd, shm_ledger_fd, shm_transactionspool_size, shm_ledger_size;
+static sem_t *sem_transactions_pool, *sem_ledger;
+static void *shm_transactionspool_base = NULL;
+static void *shm_ledger_base = NULL;
+static int shm_transactionspool_fd, shm_ledger_fd;
+int shm_transactionspool_size, shm_ledger_size;
 
 // declarar array para armazenamento dos PIDs dos processos filhos
 pid_t pids[3];
@@ -267,7 +268,6 @@ void sigint(int signum)
     (void)signum; // ignorar o sinal, não é necessário para o tratamento
     log_info("SIGINT recebido... Paragem de execução em curso...");
     cleanup();
-    ;
     exit(EXIT_SUCCESS);
 }
 
@@ -392,7 +392,7 @@ int main()
     {
         signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo miner
         log_info("Miner iniciado com PID %d", getpid());
-        miner(NUM_MINERS);
+        miner();
         exit(EXIT_SUCCESS);
     }
 

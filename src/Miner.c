@@ -7,17 +7,29 @@
 #define _GNU_SOURCE // para o vasprintf
 #include <stdio.h>
 #include <pthread.h>
+#include <sys/mman.h>
+#include <fcntl.h>
 #include <stdarg.h>
 #include <time.h>
 #include <unistd.h>
 #include <stdlib.h>
 #include <signal.h>
+#include <openssl/sha.h>
 
 #include "../include/Controller.h"
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
 static char *TIPO_PROCESSO = NULL;
+
+// aceder a variavel globais do controller
+int NUM_MINERS;
+int TRANSACTIONS_PER_BLOCK;
+int shm_transactionspool_size;
+
+// definições de variaveis da transactions pool para acesso em todas as threads
+static void *shm_transactionspool_base = NULL;
+static int shm_transactionspool_fd = -1;
 
 // flag para paragem das threads ; volatile assegura o bom acesso à variavel em qualquer thread
 volatile int stop_threads = 0;
@@ -121,7 +133,7 @@ void *miner_thread(void *arg)
     MinerThreadArgs *args = (MinerThreadArgs *)arg;
     int thread_id = args->thread_id;
 
-    log_info("Miner thread %d (PID: %d) is running...", thread_id, getpid());
+    log_info("Miner thread %d (PID: %d) em execução...", thread_id, getpid());
 
     while (!stop_threads)
     {
@@ -129,12 +141,32 @@ void *miner_thread(void *arg)
         sleep(20);
     }
 
-    log_info("Miner thread %d has finished.", thread_id);
+    log_info("Miner thread %d terminou.", thread_id);
     pthread_exit(NULL);
 }
 
-void miner(int num_miners)
+void miner()
 {
+
+    // abrir a memoria partilhada para a transactions pool (já existente)
+    shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
+    if (shm_transactionspool_fd == -1)
+    {
+        perror("MINER : Erro ao abrir memória partilhada para transactions pool");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("shm_transactionspool_size: %d\n", shm_transactionspool_size);
+
+    // mapear a memoria partilhada para o espaço de memória do processo
+    shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
+    if (shm_transactionspool_base == MAP_FAILED)
+    {
+        perror("MINER : Erro ao mapear memória partilhada para transactions pool");
+        close(shm_transactionspool_fd);
+        exit(EXIT_FAILURE);
+    }
+
     // bloquear o SIGTERM em todas as threads
     sigset_t set;
     sigemptyset(&set);
@@ -149,8 +181,8 @@ void miner(int num_miners)
         return;
     }
 
-    pthread_t threads[num_miners];
-    MinerThreadArgs thread_args[num_miners];
+    pthread_t threads[NUM_MINERS];
+    MinerThreadArgs thread_args[NUM_MINERS];
 
     // Abrir o semaforo para logs (já existente)
     sem_log_file = sem_open(SEM_LOG_FILE, 0);
@@ -168,7 +200,7 @@ void miner(int num_miners)
     }
     TIPO_PROCESSO = "MINER";
 
-    for (int i = 0; i < num_miners; i++)
+    for (int i = 0; i < NUM_MINERS; i++)
     {
         thread_args[i].thread_id = i + 1;
 
@@ -179,7 +211,7 @@ void miner(int num_miners)
         }
     }
 
-    for (int i = 0; i < num_miners; i++)
+    for (int i = 0; i < NUM_MINERS; i++)
     {
         // espera pelo fim de cada thread
         pthread_join(threads[i], NULL);

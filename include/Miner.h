@@ -7,6 +7,6 @@
 #ifndef MINER_H
 #define MINER_H
 
-void miner(int num_miners);
+void miner();
 
 #endif // MINER_H

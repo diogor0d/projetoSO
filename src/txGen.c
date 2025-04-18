@@ -31,11 +31,8 @@ unsigned long long current_time_in_milliseconds()
     return (unsigned long long)(ts.tv_sec) * 1000 + (ts.tv_nsec) / 1000000; // converter pala milisegundos
 }
 
-void sigint(int signum)
+void cleanup()
 {
-    (void)signum; // ignorar o sinal, não é necessário para o tratamento
-    printf("A terminar o programa...\n");
-
     // Fechar o semáforo
     if (sem_close(sem_tx_pool) == -1)
     {
@@ -50,6 +47,14 @@ void sigint(int signum)
     {
         perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
     }
+}
+
+void sigint(int signum)
+{
+    (void)signum; // ignorar o sinal, não é necessário para o tratamento
+    printf("\nA terminar o programa...\n");
+
+    cleanup();
 
     exit(0);
 }
@@ -206,21 +211,7 @@ int main(int argc, char *argv[])
         sleep(sleep_time);
     }
 
-    // Unmap e fecho da shared memory
-    if (munmap(tx_pool, shm_size) == -1)
-    {
-        perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
-    }
-    if (close(shm_fd) == -1)
-    {
-        perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
-    }
-
-    // fechar o semaforo da transactions pool
-    if (sem_close(sem_tx_pool) == -1)
-    {
-        perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
-    }
+    cleanup();
 
     return 0;
 }
