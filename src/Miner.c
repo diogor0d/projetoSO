@@ -19,6 +19,9 @@ static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
 static char *TIPO_PROCESSO = NULL;
 
+// flag para paragem das threads ; volatile assegura o bom acesso à variavel em qualquer thread
+volatile int stop_threads = 0;
+
 typedef struct
 {
     int thread_id;
@@ -56,7 +59,7 @@ static void log_info(const char *format, ...)
     // Escrever a mensagem de log no ficheiro e no stdout
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\033[33m%s %s > \033[0m%s\n", time_str, TIPO_PROCESSO, log_message);
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
     fflush(stdout);
 
     // desbloquear o semáforo
@@ -66,8 +69,9 @@ static void log_info(const char *format, ...)
     free(log_message);
 }
 
-void cleanup()
+static void cleanup()
 {
+
     // Close the log file
     if (log_file)
     {
@@ -94,6 +98,24 @@ void sigterm(int signum)
     exit(EXIT_SUCCESS);
 }
 
+void *signal_handler_thread(void *arg)
+{
+    sigset_t *set = (sigset_t *)arg;
+    int sig;
+
+    // Wait for SIGTERM
+    if (sigwait(set, &sig) == 0)
+    {
+        if (sig == SIGTERM)
+        {
+            log_info("SIGTERM recebido. A terminar as miner threads...");
+            stop_threads = 1; // Signal threads to stop
+        }
+    }
+
+    return NULL;
+}
+
 void *miner_thread(void *arg)
 {
     MinerThreadArgs *args = (MinerThreadArgs *)arg;
@@ -101,7 +123,11 @@ void *miner_thread(void *arg)
 
     log_info("Miner thread %d (PID: %d) is running...", thread_id, getpid());
 
-    sleep(500);
+    while (!stop_threads)
+    {
+        // Simulate work
+        sleep(20);
+    }
 
     log_info("Miner thread %d has finished.", thread_id);
     pthread_exit(NULL);
@@ -109,8 +135,19 @@ void *miner_thread(void *arg)
 
 void miner(int num_miners)
 {
-    // tratamento de sinais
-    signal(SIGTERM, sigterm); // Register SIGTERM handler
+    // bloquear o SIGTERM em todas as threads
+    sigset_t set;
+    sigemptyset(&set);
+    sigaddset(&set, SIGTERM);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+    // criar a thread para tratamento de sinais
+    pthread_t signal_thread;
+    if (pthread_create(&signal_thread, NULL, signal_handler_thread, &set) != 0)
+    {
+        perror("MINER : Erro ao criar thread de tratamento de sinais");
+        return;
+    }
 
     pthread_t threads[num_miners];
     MinerThreadArgs thread_args[num_miners];
@@ -148,7 +185,10 @@ void miner(int num_miners)
         pthread_join(threads[i], NULL);
     }
 
-    log_info("Todas as miner threads terminaram.\n");
+    // esperar pela thread de tratamento de sinais
+    pthread_join(signal_thread, NULL);
+
+    log_info("Todas as miner threads terminaram.");
 
     // fechar o semaforo para logs
     cleanup();

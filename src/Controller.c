@@ -96,7 +96,7 @@ static void log_info(const char *format, ...)
     // Escrever a mensagem de log no ficheiro e no stdout
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\033[33m%s %s > \033[0m%s\n", time_str, TIPO_PROCESSO, log_message);
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
     fflush(stdout);
 
     // desbloquear o semáforo
@@ -157,7 +157,7 @@ void parse_config()
     fclose(file);
 }
 
-void cleanup()
+static void cleanup()
 {
     log_info("A libertar recursos...");
 
@@ -166,7 +166,7 @@ void cleanup()
     {
         if (pids[i] > 0) // Ensure the PID is valid
         {
-            log_info("Enviando SIGTERM para o processo filho com PID %d", pids[i]);
+            log_info("Enviado SIGTERM para o processo filho com PID %d", pids[i]);
             if (kill(pids[i], SIGTERM) == -1)
             {
                 log_info("Erro ao enviar SIGTERM para o processo filho com PID %d", pids[i]);
@@ -284,7 +284,6 @@ int main()
         perror("CONTROLLER : Erro ao abrir o ficheiro de log");
         exit(EXIT_FAILURE);
     }
-    printf("CONTROLLER DEBUG: log_file = %p\n", log_file);
 
     // abertura do semaforo para logs
     sem_log_file = sem_open(SEM_LOG_FILE, O_CREAT, 0666, 1);
