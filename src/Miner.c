@@ -163,8 +163,6 @@ void miner()
         exit(EXIT_FAILURE);
     }
 
-    printf("shm_transactionspool_size: %d\n", shm_transactionspool_size);
-
     // mapear a memoria partilhada para o espaço de memória do processo
     shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
     if (shm_transactionspool_base == MAP_FAILED)

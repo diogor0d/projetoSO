@@ -195,11 +195,9 @@ static void cleanup()
     // Unmap and close shared memory for transaction pool
     if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
     {
-        log_info("Erro ao desmapear SHM_TRANSACTIONSPOOL");
     }
     if (close(shm_transactionspool_fd) == -1)
     {
-        log_info("Erro ao fechar SHM_TRANSACTIONSPOOL");
     }
     if (shm_unlink(SHM_TRANSACTIONS_POOL) == -1)
     {
@@ -209,11 +207,9 @@ static void cleanup()
     // Unmap and close shared memory for ledger
     if (munmap(shm_ledger_base, shm_ledger_size) == -1)
     {
-        log_info("Erro ao desmapear SHM_LEDGER");
     }
     if (close(shm_ledger_fd) == -1)
     {
-        log_info("Erro ao fechar SHM_LEDGER");
     }
     if (shm_unlink(SHM_LEDGER) == -1)
     {
@@ -273,7 +269,7 @@ void sigint(int signum)
 
 int main()
 {
-    signal(SIGINT, sigint); // redirecionar o sinal SIGINT para permitir a interrupção do programa
+    signal(SIGINT, SIG_IGN); // ignorar SIGINT temporariamente
 
     // Ler e processar o ficheiro de configuração
     parse_config();
@@ -290,8 +286,7 @@ int main()
     if (sem_log_file == SEM_FAILED)
     {
         perror("Erro ao criar semáforo para LOG_FILE");
-        sem_unlink(SEM_TRANSACTIONS_POOL); // Clean up
-        sem_unlink(SEM_LEDGER);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -313,7 +308,7 @@ int main()
     if (sem_transactions_pool == SEM_FAILED)
     {
         log_info("Erro ao criar semáforo para TRANSACTIONS_POOL");
-        sem_unlink(SEM_LOG_FILE);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -322,8 +317,7 @@ int main()
     if (sem_ledger == SEM_FAILED)
     {
         log_info("Erro ao criar semáforo para LEDGER");
-        sem_unlink(SEM_TRANSACTIONS_POOL);
-        sem_unlink(SEM_LOG_FILE);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -332,12 +326,14 @@ int main()
     if (shm_transactionspool_fd == -1)
     {
         log_info("Erro na criação de SHM_TRANSACTIONSPOOL");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     shm_transactionspool_size = sizeof(TransactionPool) + (TRANSACTION_POOL_SIZE * sizeof(PendingTransaction));
     if (ftruncate(shm_transactionspool_fd, shm_transactionspool_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_TRANSACTIONSPOOL");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     // mapear a memoria partilhada
@@ -345,22 +341,22 @@ int main()
     if (shm_transactionspool_base == MAP_FAILED)
     {
         log_info("Erro ao mapear SHM_TRANSACTIONSPOOL");
-        shm_unlink(SHM_TRANSACTIONS_POOL);
+        cleanup();
         exit(EXIT_FAILURE);
     }
-    // bloquear o semaforo antes de escrever na memoria partilhada
-    if (sem_wait(sem_transactions_pool) == -1)
-    {
-        log_info("Erro ao bloquear semáforo SEM_TRANSACTIONS_POOL");
-    }
-    memset(shm_transactionspool_base, 0, shm_transactionspool_size);
+    memset(shm_transactionspool_base, 0, shm_transactionspool_size); // Inicializar a memória partilhada para a transactions pool
     // Initialize the TransactionPool in shared memory
     TransactionPool *tx_pool = (TransactionPool *)shm_transactionspool_base;
     tx_pool->size = TRANSACTION_POOL_SIZE;
-    //  desbloquear o semaforo após a escrita
-    if (sem_post(sem_transactions_pool) == -1)
+
+    // desmapear a memoria partilhada do processo atual
+    if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
     {
-        log_info("Erro ao desbloquear semáforo SEM_TRANSACTIONS_POOL");
+        log_info("Erro ao desmapear SHM_TRANSACTIONSPOOL");
+    }
+    if (close(shm_transactionspool_fd) == -1)
+    {
+        log_info("Erro ao fechar SHM_TRANSACTIONSPOOL");
     }
 
     // Criar o segmento de memoria partilhada para LEDGER
@@ -368,14 +364,37 @@ int main()
     if (shm_ledger_fd == -1)
     {
         log_info("Erro na criação de SHM_LEDGER");
+        cleanup();
         exit(EXIT_FAILURE);
     }
-    shm_ledger_size = 1024; // alterar no futuro para sizeof() com BLOCKCHAIN_BLOCKS * BLOCK_SIZE
+    shm_ledger_size = BLOCKCHAIN_BLOCKS * sizeof(TransactionBlock);
     if (ftruncate(shm_ledger_fd, shm_ledger_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_LEDGER");
+        cleanup();
         exit(EXIT_FAILURE);
     }
+    // mapear a memoria partilhada
+    shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
+    if (shm_ledger_base == MAP_FAILED)
+    {
+        log_info("Erro ao mapear SHM_LEDGER");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    memset(shm_ledger_base, 0, shm_ledger_size); // Inicializar a memória partilhada para o ledger
+    // desmapear a memoria partilhada do processo atual
+    if (munmap(shm_ledger_base, shm_ledger_size) == -1)
+    {
+        log_info("Erro ao desmapear SHM_LEDGER");
+    }
+    if (close(shm_ledger_fd) == -1)
+    {
+        log_info("Erro ao fechar SHM_LEDGER");
+    }
+
+    // Voltar a tratar o sinal SIGINT
+    signal(SIGINT, sigint); // Reatribuir o tratamento do sinal SIGINT
 
     // Iniciar os processos dos varios componentes
 
@@ -384,6 +403,7 @@ int main()
     if (pids[0] == -1)
     {
         log_info("Erro ao criar o miner process");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     else if (pids[0] == 0)
@@ -400,6 +420,7 @@ int main()
     {
         signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo validator
         log_info("Erro ao criar o validator process");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     else if (pids[1] == 0)
@@ -415,6 +436,7 @@ int main()
     {
         signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo statistics
         log_info("Erro ao criar o statistics process");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     else if (pids[2] == 0)

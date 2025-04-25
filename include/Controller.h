@@ -72,12 +72,6 @@ static inline size_t get_transaction_block_size()
     return sizeof(TransactionBlock) + TRANSACTIONS_PER_BLOCK * sizeof(Transaction);
 }
 
-typedef struct
-{
-
-}
-
-FILE *
-open_log_file();
+FILE *open_log_file();
 
 #endif // CONTROLLER_H
