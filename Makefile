@@ -11,7 +11,7 @@ CC = gcc
 CFLAGS = -Wall -Wextra
 
 # Source files
-SRCS = src/Controller.c src/Miner.c src/PoW/pow.c
+SRCS = src/Controller.c src/Miner.c src/SHMManagement.c src/Validator.c src/Statistics.c src/PoW/pow.c
 
 # Output executable
 TARGET = DeiChain

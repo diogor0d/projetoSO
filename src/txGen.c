@@ -17,12 +17,12 @@
 
 #include "../include/Controller.h"
 
-int tx_number = 0;               // incremental value for transaction id
-int shm_fd = 0;                  // file descriptor para a shared memory
-sem_t *sem_tx_pool = NULL;       // semáforo para a transactions pool
-void *shm_base = NULL;           // ponteiro para a memória partilhada
-size_t shm_size = 0;             // tamanho da memória partilhada
-TransactionPool *tx_pool = NULL; // ponteiro para a pool de transações
+int tx_number = 0;                  // incremental value for transaction id
+int shm_fd = 0;                     // file descriptor para a shared memory
+sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
+void *shm_base = NULL;              // ponteiro para a memória partilhada
+size_t shm_size = 0;                // tamanho da memória partilhada
+TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
 
 unsigned long long current_time_in_milliseconds()
 {
@@ -59,18 +59,36 @@ void sigint(int signum)
     exit(0);
 }
 
-void generate_transaction(Transaction *tx, int reward)
+void generate_transaction(PendingTransaction *p_tx, int reward)
 {
 
     unsigned long long t_id = getpid() * 1000 + current_time_in_milliseconds() + tx_number;
     tx_number++;
-    tx->id = t_id;
-    tx->reward = reward;
-    tx->sender = getpid();
-    tx->receiver = rand() % 10000;
-    tx->age = 0;
-    tx->value = (double)(rand() % 10000) / 100.0;
-    tx->timestamp = time(NULL);
+    Transaction new_tx;
+
+    new_tx.id = t_id;
+    new_tx.reward = reward;
+    new_tx.value = (double)(rand() % 10000) / 100.0;
+    new_tx.timestamp = time(NULL);
+
+    p_tx->tx = new_tx; // atribuir a nova transação ao PendingTransaction
+    p_tx->filled = 1;  // marcar como ocupada
+    p_tx->age = 0;     // inicializar a idade da transação
+}
+
+TransactionPoolInterface interfaceTxPool(void *shm_base)
+{
+    TransactionPoolInterface pool;
+
+    // Map the shared memory header
+    TransactionPoolSHM *shm_pool = (TransactionPoolSHM *)shm_base;
+
+    // Set pointers to the fields in shared memory
+    pool.size = &shm_pool->size;
+    pool.count = &shm_pool->count;
+    pool.transactions = (PendingTransaction *)((char *)shm_base + shm_pool->transactions_offset);
+
+    return pool;
 }
 
 int main(int argc, char *argv[])
@@ -81,7 +99,7 @@ int main(int argc, char *argv[])
     // Ler e processar os argumentos da linha de comando
     if (argc != 3)
     {
-        fprintf(stderr, "Uso: %s <reward> <sleep time>\n", argv[0]);
+        printf("Uso: %s <reward> <sleep time>\n", argv[0]);
         exit(EXIT_FAILURE);
     }
     int reward = atoi(argv[1]);
@@ -91,7 +109,8 @@ int main(int argc, char *argv[])
 
     if (reward < 1 || reward > 3)
     {
-        fprintf(stderr, "O reward deve ser um valor entre 1 e 3.\n");
+        printf("O reward deve ser um valor entre 1 e 3.\n");
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -99,7 +118,8 @@ int main(int argc, char *argv[])
 
     if (sleep_time < 200 || sleep_time > 3000)
     {
-        fprintf(stderr, "O sleep time deve ser um valor entre 200 e 3000.\n");
+        printf("O sleep time deve ser um valor entre 200 e 3000.\n");
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -108,6 +128,7 @@ int main(int argc, char *argv[])
     if (sem_tx_pool == SEM_FAILED)
     {
         perror("Erro ao abrir semáforo SEM_TRANSACTIONS_POOL\n");
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -116,42 +137,40 @@ int main(int argc, char *argv[])
     if (shm_fd == -1)
     {
         perror("Erro ao abrir SHM_TRANSACTIONS_POOL\n");
-        sem_close(sem_tx_pool);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
     // Como do ponto de vista do txgen o poolsize é desconhecido, fazemos um map inicial para obter as caracteristicas da transaction pool (nomeadamente o tamanho) e obtida esta informação, fazemos um novo map com o tamanho total da memória partilhada a ser utilizada.
 
     // Mapear apenas o cabeçalho (TransactionPool) para ler o tamanho
-    shm_base = mmap(NULL, sizeof(TransactionPool), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
+    shm_base = mmap(NULL, sizeof(TransactionPoolSHM), PROT_READ | PROT_WRITE, MAP_SHARED, shm_fd, 0);
     if (shm_base == MAP_FAILED)
     {
         perror("Erro ao mapear SHM_TRANSACTIONS_POOL\n");
-        close(shm_fd);
-        sem_close(sem_tx_pool);
+        cleanup();
         exit(EXIT_FAILURE);
     }
     printf("Mapeamento da memoria partilhada inicial efetuado...\n");
 
     // Ler o tamanho da pool de transações
-    tx_pool = (TransactionPool *)shm_base;
+    tx_pool = (TransactionPoolSHM *)shm_base;
     unsigned int pool_size = tx_pool->size;
     printf("Leitura do tamanho da pool efetuado...\n");
 
     printf("Tamanho da transactions pool: %d\n", pool_size);
 
     // Desmapear a memória inicial
-    if (munmap(shm_base, sizeof(TransactionPool)) == -1)
+    if (munmap(shm_base, sizeof(TransactionPoolSHM)) == -1)
     {
         perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
-        close(shm_fd);
-        sem_close(sem_tx_pool);
+        cleanup();
         exit(EXIT_FAILURE);
     }
     printf("Desmapeamento efetuado...\n");
 
     // Calcular o tamanho total da memória partilhada
-    shm_size = sizeof(TransactionPool) + (pool_size * sizeof(Transaction));
+    shm_size = sizeof(TransactionPoolSHM) + (pool_size * sizeof(PendingTransaction));
 
     printf("Redimensionamento da memoria partilhada em curso...\n");
     // Mapear novamente com o tamanho total
@@ -159,12 +178,11 @@ int main(int argc, char *argv[])
     if (shm_base == MAP_FAILED)
     {
         perror("Erro ao mapear SHM_TRANSACTIONS_POOL com tamanho total\n");
-        close(shm_fd);
-        sem_close(sem_tx_pool);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
-    tx_pool = (TransactionPool *)shm_base;
+    tx_pool = (TransactionPoolSHM *)shm_base;
 
     srand(time(NULL));
 
@@ -178,20 +196,23 @@ int main(int argc, char *argv[])
             break;
         }
 
-        if (tx_pool->count < pool_size)
+        // O facto das transações estarem na shared memory impede o uso direto de ponteiros, que apenas dizem respeito ao espaço de endereçamento do processo atual. Portanto, é necessário recorrer a offsets para manipular o acesso aos dados em cada processo que acede à shared memory. Para isso, utiliza-se uma interface local de acesso à transactions pool que aponta para os dados na memoria mapeada para a shared memory.
+        TransactionPoolInterface tx_pool_interface = interfaceTxPool(shm_base);
+
+        if (*tx_pool_interface.count < *tx_pool_interface.size)
         {
 
-            for (unsigned int i = 0; i < tx_pool->size; i++)
+            for (unsigned int i = 0; i < *tx_pool_interface.size; i++)
             {
-                if (tx_pool->transactions[i].id == 0) // verificação para assegurar que o lugar na lista está livre
+                if (tx_pool_interface.transactions[i].filled == 0) // verificação para assegurar que o lugar na lista está livre
                 {
 
-                    Transaction new_tx;
+                    PendingTransaction new_tx;
                     // acrescentou-se o tempo para garantir unicidade dos ids
                     generate_transaction(&new_tx, reward);
-                    tx_pool->transactions[i] = new_tx;
-                    tx_pool->count++;
-                    printf("Transação Gerada > ID: %llu, Reward: %d\n", new_tx.id, new_tx.reward);
+                    tx_pool_interface.transactions[i] = new_tx;
+                    (*tx_pool_interface.count)++;
+                    printf("Transação Gerada > ID: %llu, Reward: %d\n", new_tx.tx.id, new_tx.tx.reward);
                     break;
                 }
             }
@@ -208,7 +229,8 @@ int main(int argc, char *argv[])
             break;
         }
 
-        sleep(sleep_time);
+        usleep(sleep_time * 1000);
+        ;
     }
 
     cleanup();

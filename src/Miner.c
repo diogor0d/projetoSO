@@ -12,12 +12,14 @@
 #include <stdarg.h>
 #include <time.h>
 #include <unistd.h>
+#include <string.h>
 #include <stdlib.h>
 #include <signal.h>
 #include <openssl/sha.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
+#include "../include/SHMManagement.h"
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
@@ -28,10 +30,21 @@ int NUM_MINERS;
 int LEDGER_SIZE;
 int TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
+int shm_ledger_size;
+
+LedgerInterface ledgerInterface;
+TransactionPoolInterface tx_pool;
 
 // definições de variaveis da transactions pool para acesso em todas as threads
 static void *shm_transactionspool_base = NULL;
 static int shm_transactionspool_fd = -1;
+
+// definições de variaveis da ledger para acesso em todas as threads
+static void *shm_ledger_base = NULL;
+static int shm_ledger_fd = -1;
+
+// variaveis para o pipe de comunicação entre miner e validator
+static int validation_pipe_fd = -1;
 
 // flag para paragem das threads ; volatile assegura o bom acesso à variavel em qualquer thread
 volatile int stop_threads = 0;
@@ -86,6 +99,22 @@ static void log_info(const char *format, ...)
 static void cleanup()
 {
 
+    if (close(shm_transactionspool_fd) == -1)
+    {
+        log_info("Erro ao fechar SHM_TRANSACTIONS_POOL");
+    }
+    if (close(shm_ledger_fd) == -1)
+    {
+        log_info("Erro ao fechar SHM_LEDGER");
+    }
+
+    if (close(validation_pipe_fd) == -1)
+    {
+        log_info("Erro ao fechar o pipe de validação");
+    }
+
+    free(ledgerInterface.blocks);
+
     // Close the log file
     if (log_file)
     {
@@ -94,22 +123,6 @@ static void cleanup()
 
     // fechar o semaforo para logs
     sem_close(sem_log_file);
-}
-
-void sigterm(int signum)
-{
-    (void)signum; // Ignore the signal parameter
-
-    // Perform any necessary cleanup specific to the child process
-    if (log_file)
-    {
-        fclose(log_file);
-    }
-
-    cleanup(); // Call the cleanup function to close the log file and semaphores
-
-    // Exit the process
-    exit(EXIT_SUCCESS);
 }
 
 void *signal_handler_thread(void *arg)
@@ -137,15 +150,106 @@ void *miner_thread(void *arg)
 
     log_info("Miner thread %d (PID: %d) em execução...", thread_id, getpid());
 
+    int block_number = 0;
+
     while (!stop_threads)
     {
-        // selecionar transacoes da transactions pool
 
-        // criar o bloco
-        TransactionBlock block;
-        snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, rand() % 1000);
+        printf("\nTransacoes na pool: %d", *tx_pool.count);
+        printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
+        // Create a temporary array to sort transactions
 
-        // computar PoW
+        // Copy transactions from the pool to the temporary array
+        if (*tx_pool.count > (unsigned int)TRANSACTIONS_PER_BLOCK)
+        {
+            // incrementar o número do bloco
+            block_number++;
+
+            // Select TRANSACTIONS_PER_BLOCK transactions with the least reward
+            Transaction *selected_transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
+            if (selected_transactions == NULL)
+            {
+                log_info("Thread %d: Failed to allocate memory for selected transactions", thread_id);
+                pthread_exit(NULL);
+            }
+
+            int selected_count = 0;
+            unsigned int pool_index = 0;
+
+            // Use a while loop to select transactions
+            while (selected_count < TRANSACTIONS_PER_BLOCK && pool_index < *tx_pool.count)
+            {
+                PendingTransaction *current_transaction = &tx_pool.transactions[pool_index];
+
+                // Check if the transaction has a valid ID
+                if (current_transaction->tx.id != 0)
+                {
+                    selected_transactions[selected_count++] = current_transaction->tx;
+                }
+
+                pool_index++; // Move to the next transaction in the pool
+            }
+
+            free(selected_transactions);
+
+            // Create a block
+            TransactionBlock block;
+            snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, block_number);
+            strncpy(block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE); // alterar para o hash do bloco anterior
+            block.transactions = selected_transactions;
+
+            // pow
+            char hash_buffer[HASH_SIZE];
+            srand(time(NULL)); // Seed RNG
+
+            PoWResult r;
+            do
+            {
+                // Timestamp: current time
+                block.timestamp = time(NULL);
+                r = proof_of_work(&block);
+
+            } while (r.error == 1 && !stop_threads);
+
+            print_transaction_block(&block);
+
+            // Serialize the block to send via pipe
+            char block_data[1024]; // Adjust size as needed
+            snprintf(block_data, sizeof(block_data),
+                     "Block ID: %s\nPrevious Hash: %s\nTimestamp: %ld\nNonce: %u\nTransactions:\n",
+                     block.txb_id, block.previous_block_hash, block.timestamp, block.nonce);
+
+            for (int i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+            {
+                char tx_data[128];
+                snprintf(tx_data, sizeof(tx_data),
+                         "  Transaction %d: ID=%llu, Reward=%u, Value=%.2f, Timestamp=%ld\n",
+                         i, selected_transactions[i].id, selected_transactions[i].reward,
+                         selected_transactions[i].value, selected_transactions[i].timestamp);
+                strncat(block_data, tx_data, sizeof(block_data) - strlen(block_data) - 1);
+            }
+
+            if (write(validation_pipe_fd, block_data, strlen(block_data) + 1) == -1)
+            {
+                perror("Miner thread: Failed to write to named pipe");
+            }
+            else
+            {
+                log_info("Miner thread %d: Sent block to pipe:\n%s\n", thread_id, block_data);
+            }
+
+            free(selected_transactions);
+
+            // criar o bloco
+            // TransactionBlock block;
+            // snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, rand() % 1000);
+
+            // computar PoW
+        }
+        else
+        {
+            log_info("Thread %d: Not enough transactions in the pool to create a block", thread_id);
+        }
     }
 
     log_info("Miner thread %d terminou.", thread_id);
@@ -155,11 +259,35 @@ void *miner_thread(void *arg)
 void miner()
 {
 
+    // Abrir o semaforo para logs (já existente)
+    sem_log_file = sem_open(SEM_LOG_FILE, 0);
+    if (sem_log_file == SEM_FAILED)
+    {
+        perror("\nMINER : Erro ao abrir semáforo para LOG_FILE");
+        return;
+    }
+
+    log_file = open_log_file();
+    if (log_file == NULL)
+    {
+        perror("\nMINER : Erro ao abrir o ficheiro de log");
+        return;
+    }
+    TIPO_PROCESSO = "MINER";
+
+    // abrir o pipe no processo atual para acesso por todas as threads
+    validation_pipe_fd = open(VALIDATION_PIPE, O_WRONLY);
+    if (validation_pipe_fd < 0)
+    {
+        perror("\nMINER : Erro ao abrir o pipe de validação");
+        exit(EXIT_FAILURE);
+    }
+
     // abrir a memoria partilhada para a transactions pool (já existente)
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
     if (shm_transactionspool_fd == -1)
     {
-        perror("MINER : Erro ao abrir memória partilhada para transactions pool");
+        perror("\nMINER : Erro ao abrir memória partilhada para transactions pool");
         exit(EXIT_FAILURE);
     }
 
@@ -167,10 +295,60 @@ void miner()
     shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
     if (shm_transactionspool_base == MAP_FAILED)
     {
-        perror("MINER : Erro ao mapear memória partilhada para transactions pool");
+        perror("\nMINER : Erro ao mapear memória partilhada para transactions pool");
         close(shm_transactionspool_fd);
         exit(EXIT_FAILURE);
     }
+
+    // abrir a memoria partilhada para a ledger (já existente)
+    shm_ledger_fd = shm_open(SHM_LEDGER, O_RDWR, 0666);
+    if (shm_ledger_fd == -1)
+    {
+        perror("\nMINER : Erro ao abrir memória partilhada para ledger");
+        exit(EXIT_FAILURE);
+    }
+
+    // mapear a memoria partilhada para o espaço de memória do processo
+    shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
+    if (shm_ledger_base == MAP_FAILED)
+    {
+        perror("\nMINER : Erro ao mapear memória partilhada para transactions pool");
+        close(shm_ledger_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    //////////////////////////////////////
+    // codigo a utilizar no validator
+    // Initialize the ledger
+    LedgerSHM *ledger = (LedgerSHM *)shm_ledger_base;
+    ledger->last_block_index = 5;
+    // snprintf(ledger->last_block_hash, HASH_SIZE, "HASH-LAST-BLOCK");
+    ledger->num_blocks = 10;
+    ledger->blocks_offset = sizeof(LedgerSHM);
+
+    ledger = (char *)shm_ledger_base + ledger->blocks_offset;
+
+    TransactionBlockSHM *block = (TransactionBlockSHM *)ledger;
+    strcpy(block->txb_id, "BLOCK-1 VAMOS CARALHO");
+    strcpy(block->previous_block_hash, "PREV-HASH");
+    block->timestamp = time(NULL);
+    block->nonce = 1000000;
+    block->num_transactions = 2;
+
+    // Create the ledger Interface from shared memory
+    ledgerInterface = interfaceLedger(shm_ledger_base);
+    ledgerInterface.blocks[0].transactions[0].id = 69;
+    ledgerInterface.blocks[0].transactions[1].id = 70;
+    ledgerInterface.blocks[0].transactions[0].value = 11.0;
+    ledgerInterface.blocks[1].txb_id[0] = 'B';
+    // Print the ledger
+    print_ledger(&ledgerInterface);
+
+    // Free the dynamically allocated memory for blocks
+
+    /////////////////////////////////
+
+    tx_pool = interfaceTxPool(shm_transactionspool_base);
 
     // bloquear o SIGTERM em todas as threads
     sigset_t set;
@@ -189,21 +367,27 @@ void miner()
     pthread_t threads[NUM_MINERS];
     MinerThreadArgs thread_args[NUM_MINERS];
 
-    // Abrir o semaforo para logs (já existente)
-    sem_log_file = sem_open(SEM_LOG_FILE, 0);
-    if (sem_log_file == SEM_FAILED)
-    {
-        perror("MINER : Erro ao abrir semáforo para LOG_FILE");
-        return;
-    }
+    // CARECE DE SINCROINIZACAO
+    // CARECE DE SINCROINIZACAO
+    // CARECE DE SINCROINIZACAO
 
-    log_file = open_log_file();
-    if (log_file == NULL)
+    // bloco origem no validator?
+    char hash_buffer[HASH_SIZE];
+    srand(time(NULL)); // Seed RNG
+
+    // criar o bloco inicial (origem da blockchain)
+    TransactionBlock empty_block;
+    memset(&empty_block, 0, sizeof(TransactionBlock));
+    empty_block.transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
+    PoWResult r = proof_of_work(&empty_block);
+    if (r.error)
     {
-        perror("MINER : Erro ao abrir o ficheiro de log");
-        return;
+        perror("MINER : Erro ao computar o hash do bloco origem\n");
+        exit(EXIT_FAILURE);
     }
-    TIPO_PROCESSO = "MINER";
+    strcpy(hash_buffer, r.hash);
+
+    log_info("Hash Inicial: %s", hash_buffer);
 
     for (int i = 0; i < NUM_MINERS; i++)
     {

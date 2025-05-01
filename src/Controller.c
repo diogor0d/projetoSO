@@ -18,9 +18,12 @@
 #include <sys/wait.h>
 #include <semaphore.h>
 #include <signal.h>
+#include <errno.h>
 
 #include "../include/Controller.h"
 #include "../include/Miner.h"
+#include "../include/Validator.h"
+#include "../include/Statistics.h"
 
 int NUM_MINERS;
 int POOL_SIZE;
@@ -252,6 +255,12 @@ static void cleanup()
         perror("Erro ao desvincular semáforo SEM_LOG_FILE");
     }
 
+    // Fechar o pipe
+    if (unlink(VALIDATION_PIPE) == -1)
+    {
+        log_info("Erro ao desvincular o pipe de validação");
+    }
+
     // Close the log file
     if (log_file)
     {
@@ -329,7 +338,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    shm_transactionspool_size = sizeof(TransactionPool) + (TRANSACTION_POOL_SIZE * sizeof(PendingTransaction));
+    shm_transactionspool_size = sizeof(TransactionPoolSHM) + (TRANSACTION_POOL_SIZE * sizeof(PendingTransaction));
     if (ftruncate(shm_transactionspool_fd, shm_transactionspool_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_TRANSACTIONSPOOL");
@@ -344,12 +353,11 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    memset(shm_transactionspool_base, 0, shm_transactionspool_size); // Inicializar a memória partilhada para a transactions pool
-    // Initialize the TransactionPool in shared memory
-    TransactionPool *tx_pool = (TransactionPool *)shm_transactionspool_base;
-    tx_pool->size = TRANSACTION_POOL_SIZE;
+    memset(shm_transactionspool_base, 0, shm_transactionspool_size);                                     // Inicializar a memória partilhada para a transactions pool
+    ((TransactionPoolSHM *)shm_transactionspool_base)->size = TRANSACTION_POOL_SIZE;                     // Definir o tamanho da transactions pool
+    ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_offset = sizeof(TransactionPoolSHM); // Inicializar o contador de transações
 
-    // desmapear a memoria partilhada do processo atual
+    // desmapear a memoria partilhada do processo atual (já que não é necessário)
     if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
     {
         log_info("Erro ao desmapear SHM_TRANSACTIONSPOOL");
@@ -367,7 +375,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    shm_ledger_size = BLOCKCHAIN_BLOCKS * sizeof(TransactionBlock);
+    shm_ledger_size = sizeof(LedgerSHM) + BLOCKCHAIN_BLOCKS * sizeof(TransactionBlockSHM);
     if (ftruncate(shm_ledger_fd, shm_ledger_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_LEDGER");
@@ -383,7 +391,7 @@ int main()
         exit(EXIT_FAILURE);
     }
     memset(shm_ledger_base, 0, shm_ledger_size); // Inicializar a memória partilhada para o ledger
-    // desmapear a memoria partilhada do processo atual
+    // desmapear a memoria partilhada do processo atual (já que não é necessário)
     if (munmap(shm_ledger_base, shm_ledger_size) == -1)
     {
         log_info("Erro ao desmapear SHM_LEDGER");
@@ -392,6 +400,15 @@ int main()
     {
         log_info("Erro ao fechar SHM_LEDGER");
     }
+
+    // Criar pipe para comunição entre validator e miner
+    if ((mkfifo(VALIDATION_PIPE, O_CREAT | O_EXCL | 0777) < 0) && (errno != EEXIST))
+    {
+        log_info("Falha ao criar o pipe %s: %s", VALIDATION_PIPE, strerror(errno));
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    printf("Pipe %s criado com sucesso\n", VALIDATION_PIPE);
 
     // Voltar a tratar o sinal SIGINT
     signal(SIGINT, sigint); // Reatribuir o tratamento do sinal SIGINT
@@ -414,6 +431,9 @@ int main()
         exit(EXIT_SUCCESS);
     }
 
+    // IMPLEMENTACAO DE VALIDATOR DESATUALIZADA :
+    // - thread para gestao de numero de validators
+    // - numero de validators aativo dinamico
     // Iniciar o validator
     pids[1] = fork();
     if (pids[1] == -1)
@@ -426,7 +446,7 @@ int main()
     else if (pids[1] == 0)
     {
         log_info("Validator iniciado com PID %d", getpid());
-        // validator();        // A implementar
+        validator();
         exit(EXIT_SUCCESS);
     }
 
@@ -442,7 +462,7 @@ int main()
     else if (pids[2] == 0)
     {
         log_info("Statistics iniciado com PID %d", getpid());
-        // statistics();       // A implementar
+        statistics(); // A implementar
         exit(EXIT_SUCCESS);
     }
 

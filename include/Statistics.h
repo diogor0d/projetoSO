@@ -4,6 +4,9 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
-void statistics()
-{
-}
+#ifndef STATISTICS_H
+#define STATISTICS_H
+
+void statistics();
+
+#endif // STATISTICS_H
