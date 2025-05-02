@@ -26,10 +26,10 @@
 #include "../include/Statistics.h"
 
 int NUM_MINERS;
-int POOL_SIZE;
-int TRANSACTIONS_PER_BLOCK;
+size_t TRANSACTIONS_PER_BLOCK;
 int BLOCKCHAIN_BLOCKS;
-int TRANSACTION_POOL_SIZE = 10000; // valor por omissão
+int TRANSACTION_POOL_SIZE;
+int BLOCK_BUFFER_SIZE = 2048;
 
 // Definições de semáforos e memória partilhada para acesso global
 
@@ -128,13 +128,13 @@ void parse_config()
     }
     NUM_MINERS = atoi(buffer);
 
-    if (fscanf(file, "POOL_SIZE=%s\n", buffer) != 1 || !is_positive_integer(buffer))
+    if (fscanf(file, "TRANSACTION_POOL_SIZE=%s\n", buffer) != 1 || !is_positive_integer(buffer))
     {
-        printf("Valor inválido para POOL_SIZE\n");
+        printf("Valor inválido para TRANSACTION_POOL_SIZE\n");
         fclose(file);
         exit(EXIT_FAILURE);
     }
-    POOL_SIZE = atoi(buffer);
+    TRANSACTION_POOL_SIZE = atoi(buffer);
 
     if (fscanf(file, "TRANSACTIONS_PER_BLOCK=%s\n", buffer) != 1 || !is_positive_integer(buffer))
     {
@@ -151,12 +151,6 @@ void parse_config()
         exit(EXIT_FAILURE);
     }
     BLOCKCHAIN_BLOCKS = atoi(buffer);
-
-    // efetuar a leitura transaction_pool_size apenas se existir
-    if (fscanf(file, "TRANSACTION_POOL_SIZE=%s\n", buffer) == 1 && is_positive_integer(buffer))
-    {
-        TRANSACTION_POOL_SIZE = atoi(buffer);
-    }
 
     fclose(file);
 }
@@ -276,9 +270,19 @@ void sigint(int signum)
     exit(EXIT_SUCCESS);
 }
 
+void sigterm(int signum)
+{
+    (void)signum; // ignorar o sinal, não é necessário para o tratamento
+    log_info("SIGTERM recebido... Paragem de execução em curso...");
+    cleanup();
+    exit(EXIT_SUCCESS);
+}
+
 int main()
 {
-    signal(SIGINT, SIG_IGN); // ignorar SIGINT temporariamente
+    // ignorar sinais de interrupção e paragem até ser segura a limpeza dos recursos
+    signal(SIGINT, SIG_IGN);
+    signal(SIGTERM, SIG_IGN);
 
     // Ler e processar o ficheiro de configuração
     parse_config();
@@ -305,10 +309,9 @@ int main()
     log_info("Processo Controller iniciado (PID: %d)", getpid());
     log_info("Configurações atuais:");
     log_info("NUM_MINERS: %d", NUM_MINERS);
-    log_info("POOL_SIZE: %d", POOL_SIZE);
+    log_info("TRANSACTION_POOL_SIZE: %d\n", TRANSACTION_POOL_SIZE);
     log_info("TRANSACTIONS_PER_BLOCK: %d", TRANSACTIONS_PER_BLOCK);
     log_info("BLOCKCHAIN_BLOCKS: %d", BLOCKCHAIN_BLOCKS);
-    log_info("TRANSACTION_POOL_SIZE: %d\n", TRANSACTION_POOL_SIZE);
 
     // Criação dos semáforos
 
@@ -390,8 +393,11 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    memset(shm_ledger_base, 0, shm_ledger_size); // Inicializar a memória partilhada para o ledger
-    // desmapear a memoria partilhada do processo atual (já que não é necessário)
+    memset(shm_ledger_base, 0, shm_ledger_size);                       // Inicializar a memória partilhada para o ledger
+    ((LedgerSHM *)shm_ledger_base)->num_blocks = BLOCKCHAIN_BLOCKS;    // Inicializar o número de blocos no ledger
+    ((LedgerSHM *)shm_ledger_base)->blocks_offset = sizeof(LedgerSHM); // Inicializar o offset para as transações
+
+    //  desmapear a memoria partilhada do processo atual (já que não é necessário)
     if (munmap(shm_ledger_base, shm_ledger_size) == -1)
     {
         log_info("Erro ao desmapear SHM_LEDGER");
@@ -408,10 +414,6 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    printf("Pipe %s criado com sucesso\n", VALIDATION_PIPE);
-
-    // Voltar a tratar o sinal SIGINT
-    signal(SIGINT, sigint); // Reatribuir o tratamento do sinal SIGINT
 
     // Iniciar os processos dos varios componentes
 
@@ -425,7 +427,6 @@ int main()
     }
     else if (pids[0] == 0)
     {
-        signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo miner
         log_info("Miner iniciado com PID %d", getpid());
         miner();
         exit(EXIT_SUCCESS);
@@ -438,7 +439,6 @@ int main()
     pids[1] = fork();
     if (pids[1] == -1)
     {
-        signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo validator
         log_info("Erro ao criar o validator process");
         cleanup();
         exit(EXIT_FAILURE);
@@ -454,7 +454,6 @@ int main()
     pids[2] = fork();
     if (pids[2] == -1)
     {
-        signal(SIGINT, SIG_IGN); // Ignorar o sinal SIGINT no processo statistics
         log_info("Erro ao criar o statistics process");
         cleanup();
         exit(EXIT_FAILURE);
@@ -465,6 +464,10 @@ int main()
         statistics(); // A implementar
         exit(EXIT_SUCCESS);
     }
+
+    // Voltar a tratar os sinais de interrupção e paragem
+    signal(SIGINT, sigint);
+    signal(SIGTERM, sigterm);
 
     // Controlador aguarda pelo término de todos os processos filhos
     for (int i = 0; i < 3; i++)

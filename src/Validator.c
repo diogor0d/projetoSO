@@ -26,7 +26,7 @@ static char *TIPO_PROCESSO = NULL;
 
 // aceder a variavel globais do controller
 int LEDGER_SIZE;
-int TRANSACTIONS_PER_BLOCK;
+size_t TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
 int shm_ledger_size;
 
@@ -118,10 +118,102 @@ static void sigterm(int signum)
 {
     (void)signum; // Ignore the signal parameter
 
+    log_info("SIGTERM recebido. A terminar o validator...");
+
     cleanup(); // Call the cleanup function to close the log file and semaphores
 
     // Exit the process
     exit(EXIT_SUCCESS);
+}
+
+void deserialize_transaction_block(const char *input, TransactionBlock *block, int transactions_per_block)
+{
+    if (input == NULL || block == NULL)
+    {
+        log_info("Input string ou bloco inválido para desserialização.");
+        return;
+    }
+
+    // Clear the block structure
+    memset(block, 0, sizeof(TransactionBlock));
+
+    // Parse the block metadata
+    const char *ptr = input;
+    sscanf(ptr, "BID: %s PH: %s TS: %ld NON: %u,",
+           block->txb_id,
+           block->previous_block_hash,
+           &block->timestamp,
+           &block->nonce);
+
+    // Allocate memory for transactions
+    block->transactions = (Transaction *)calloc(transactions_per_block, sizeof(Transaction));
+    if (block->transactions == NULL)
+    {
+        perror("Failed to allocate memory for transactions during deserialization");
+        exit(EXIT_FAILURE);
+    }
+
+    // Move the pointer past the block metadata
+    ptr = strchr(ptr, ',') + 1;
+
+    // Parse each transaction
+    for (int i = 0; i < transactions_per_block; i++)
+    {
+        char tx_id[TX_ID_LEN];
+        unsigned int reward;
+        double value;
+        time_t timestamp;
+
+        // Parse the transaction data
+        sscanf(ptr, "TI %d ID=%63s R=%u V=%lf TS=%ld,", // Use %63s to limit input to TX_ID_LEN - 1
+               &i, tx_id, &reward, &value, &timestamp);
+
+        // Populate the transaction
+        strncpy(block->transactions[i].tx_id, tx_id, TX_ID_LEN - 1);
+        block->transactions[i].tx_id[TX_ID_LEN - 1] = '\0'; // Ensure null termination
+        block->transactions[i].reward = reward;
+        block->transactions[i].value = value;
+        block->transactions[i].timestamp = timestamp;
+
+        // Move the pointer to the next transaction
+        ptr = strchr(ptr, ',') + 1;
+    }
+}
+
+void blkcpy(TransactionBlockInterface *dest, const TransactionBlock *src, int transactions_per_block)
+{
+    if (dest == NULL || src == NULL)
+    {
+        log_info("Invalid source or destination for blkcpy.");
+        return;
+    }
+
+    // Copy the nonce
+    *(dest->nonce) = src->nonce;
+
+    // Copy the timestamp
+    *(dest->timestamp) = src->timestamp;
+
+    // Copy the txb_id
+    strncpy(dest->txb_id, src->txb_id, sizeof(dest->txb_id) - 1);
+    dest->txb_id[sizeof(dest->txb_id) - 1] = '\0'; // Ensure null termination
+
+    // Copy the previous block hash
+    strncpy(dest->previous_block_hash, src->previous_block_hash, sizeof(dest->previous_block_hash) - 1);
+    dest->previous_block_hash[sizeof(dest->previous_block_hash) - 1] = '\0'; // Ensure null termination
+
+    // Copy the transactions
+    for (int i = 0; i < transactions_per_block; i++)
+    {
+        // Copy the transaction ID (string)
+        strncpy(dest->transactions[i].tx_id, src->transactions[i].tx_id, TX_ID_LEN - 1);
+        dest->transactions[i].tx_id[TX_ID_LEN - 1] = '\0'; // Ensure null termination
+
+        // Copy the other fields
+        dest->transactions[i].reward = src->transactions[i].reward;
+        dest->transactions[i].value = src->transactions[i].value;
+        dest->transactions[i].timestamp = src->transactions[i].timestamp;
+    }
 }
 
 void validator()
@@ -147,7 +239,7 @@ void validator()
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
     if (shm_transactionspool_fd == -1)
     {
-        perror("\nVALIDATOR : Erro ao abrir memória partilhada para transactions pool");
+        log_info("Erro ao abrir memória partilhada para transactions pool");
         exit(EXIT_FAILURE);
     }
 
@@ -155,7 +247,7 @@ void validator()
     shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
     if (shm_transactionspool_base == MAP_FAILED)
     {
-        perror("\nVALIDATOR : Erro ao mapear memória partilhada para transactions pool");
+        log_info("Erro ao mapear memória partilhada para transactions pool");
         close(shm_transactionspool_fd);
         exit(EXIT_FAILURE);
     }
@@ -164,7 +256,7 @@ void validator()
     shm_ledger_fd = shm_open(SHM_LEDGER, O_RDWR, 0666);
     if (shm_ledger_fd == -1)
     {
-        perror("\nVALIDATOR : Erro ao abrir memória partilhada para ledger");
+        log_info("Erro ao abrir memória partilhada para ledger");
         exit(EXIT_FAILURE);
     }
 
@@ -172,17 +264,101 @@ void validator()
     shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
     if (shm_ledger_base == MAP_FAILED)
     {
-        perror("\nVALIDATOR : Erro ao mapear memória partilhada para transactions pool");
+        log_info("Erro ao mapear memória partilhada para transactions pool");
         close(shm_ledger_fd);
         exit(EXIT_FAILURE);
     }
 
-    printf("\nVALIDATOR : Abrindo o pipe de validação...\n");
     validation_pipe_fd = open(VALIDATION_PIPE, O_RDONLY);
     if (validation_pipe_fd < 0)
     {
-        perror("\nVALIDATOR : Erro ao abrir o pipe de validação");
+        log_info("Erro ao abrir o pipe de validação");
         exit(EXIT_FAILURE);
+    }
+    log_info("Pipe de validação aberto com sucesso.");
+
+    signal(SIGTERM, sigterm); // tratar o sinal SIGTERM para terminar o processo corretamente
+
+    ledgerInterface = interfaceLedger(shm_ledger_base); // criar a interface para o ledger
+
+    print_ledger(&ledgerInterface); // Print the ledger
+
+    if (*(ledgerInterface.count) == 0)
+    {
+        TransactionBlock nemesis_block;
+        memset(&nemesis_block, 0, sizeof(TransactionBlock));
+        nemesis_block.transactions =
+            (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
+        PoWResult r;
+        r = proof_of_work(&nemesis_block);
+        if (r.error)
+        {
+            perror("Could not compute the Hash\n");
+            exit(1);
+        }
+
+        log_info("Hash do bloco origem: %s\n", r.hash);
+
+        print_transaction_block(&nemesis_block); // Print the block
+
+        *(ledgerInterface.count) = 1;
+        *(ledgerInterface.blocks[0].txb_id) = 'z';
+
+        strcpy(ledgerInterface.blocks[0].txb_id, nemesis_block.txb_id);
+        *(ledgerInterface.blocks[0].timestamp) = nemesis_block.timestamp;
+        *(ledgerInterface.blocks[0].nonce) = nemesis_block.nonce;
+
+        // memcpy(ledgerInterface.blocks[0].transactions, nemesis_block.transactions, TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
+
+        strcpy(ledgerInterface.last_block_hash, r.hash);
+
+        free(nemesis_block.transactions); // Free the allocated memory for transactions
+    }
+
+    print_ledger(&ledgerInterface); // Print the ledger
+
+    log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
+
+    char buffer[1024]; // Adjust the buffer size as needed
+    ssize_t bytes_read;
+
+    while ((bytes_read = read(validation_pipe_fd, buffer, sizeof(buffer) - 1)) > 0)
+    {
+        buffer[bytes_read] = '\0'; // Null-terminate the string
+
+        TransactionBlock block;
+        deserialize_transaction_block(buffer, &block, TRANSACTIONS_PER_BLOCK); // Deserialize the block
+
+        // Print the deserialized block
+        printf("\n\nBloco recebido: %s\n", block.txb_id);
+        char HASH_BUFFER[HASH_SIZE];
+        compute_sha256(&block, HASH_BUFFER);
+        log_info("Hash do bloco recebido: %s\n", HASH_BUFFER);
+        print_transaction_block(&block); // Print the block
+
+        // Check if the block is complient with difficult
+        if (!verify_nonce(&block))
+        {
+            log_info("Bloco %s recebido tem NONCE invalida. Descartado.", block.txb_id);
+            continue;
+        }
+
+        log_info("Novo bloco aprovado: %s", block.txb_id);
+        // compute the hash to pass to the next block as previous hash
+        compute_sha256(&block, ledgerInterface.last_block_hash);
+        // put on ledger
+        blkcpy(&ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1], &block, TRANSACTIONS_PER_BLOCK);
+        // print information
+        print_ledger(&ledgerInterface); // Print the ledger
+    }
+
+    if (bytes_read == -1)
+    {
+        log_info("Error reading from pipe");
+    }
+    else if (bytes_read == 0)
+    {
+        log_info("Pipe closed by writer.\n");
     }
 
     cleanup();

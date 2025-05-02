@@ -51,7 +51,7 @@ unsigned char *serialize_block(const TransactionBlock *block, size_t *sz_buf)
   memcpy(p, &block->timestamp, sizeof(time_t));
   p += sizeof(time_t);
 
-  for (int i = 0; i < TRANSACTIONS_PER_BLOCK; ++i)
+  for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; ++i)
   {
     memcpy(p, &block->transactions[i], sizeof(Transaction));
     p += sizeof(Transaction);
@@ -116,7 +116,7 @@ int check_difficulty(const char *hash, const int reward)
       return 1;
     break;
   default:
-    fprintf(stderr, "Invalid Difficult\n");
+    fprintf(stderr, "\n\nInvalid Difficult\n");
     exit(2);
   }
 

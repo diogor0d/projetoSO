@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <signal.h>
 #include <openssl/sha.h>
+#include <stdbool.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -28,7 +29,7 @@ static char *TIPO_PROCESSO = NULL;
 // aceder a variavel globais do controller
 int NUM_MINERS;
 int LEDGER_SIZE;
-int TRANSACTIONS_PER_BLOCK;
+size_t TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
 int shm_ledger_size;
 
@@ -96,8 +97,36 @@ static void log_info(const char *format, ...)
     free(log_message);
 }
 
+void serialize_transaction_block(const TransactionBlock *block, char *output, size_t output_size, int transactions_per_block)
+{
+    if (block == NULL || output == NULL)
+    {
+        log_info("Bloco ou buffer de serialização invalidos.");
+        return;
+    }
+
+    // Start with the block metadata
+    snprintf(output, output_size,
+             "BID: %s PH: %s TS: %ld NON: %u,",
+             block->txb_id, block->previous_block_hash, block->timestamp, block->nonce);
+
+    // Append each transaction to the output
+    for (int i = 0; i < transactions_per_block; i++)
+    {
+        char tx_data[128];
+        snprintf(tx_data, sizeof(tx_data),
+                 "TI %d ID=%s R=%u V=%.2f TS=%ld,",
+                 i, block->transactions[i].tx_id, block->transactions[i].reward,
+                 block->transactions[i].value, block->transactions[i].timestamp);
+
+        // Ensure we don't exceed the output buffer size
+        strncat(output, tx_data, output_size - strlen(output) - 1);
+    }
+}
+
 static void cleanup()
 {
+    freeLedger(&ledgerInterface);
 
     if (close(shm_transactionspool_fd) == -1)
     {
@@ -112,8 +141,6 @@ static void cleanup()
     {
         log_info("Erro ao fechar o pipe de validação");
     }
-
-    free(ledgerInterface.blocks);
 
     // Close the log file
     if (log_file)
@@ -155,14 +182,18 @@ void *miner_thread(void *arg)
     while (!stop_threads)
     {
 
-        printf("\nTransacoes na pool: %d", *tx_pool.count);
-        printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
-        // Create a temporary array to sort transactions
+        log_info("Transacoes na pool: %d", *tx_pool.count);
+        // printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
+        //  Create a temporary array to sort transactions
 
         // Copy transactions from the pool to the temporary array
-        if (*tx_pool.count > (unsigned int)TRANSACTIONS_PER_BLOCK)
+        if (*tx_pool.count > (unsigned int)TRANSACTIONS_PER_BLOCK && *ledgerInterface.count != 0)
         {
+            sleep(5);
             // incrementar o número do bloco
+
+            // print_transaction_pool(&tx_pool);
+
             block_number++;
 
             // Select TRANSACTIONS_PER_BLOCK transactions with the least reward
@@ -173,24 +204,42 @@ void *miner_thread(void *arg)
                 pthread_exit(NULL);
             }
 
+            // Use a bitmap to track selected transactions
+            bool *selected_bitmap = (bool *)calloc(*tx_pool.count, sizeof(bool));
+            if (selected_bitmap == NULL)
+            {
+                log_info("Thread %d: Failed to allocate memory for selected bitmap", thread_id);
+                pthread_exit(NULL);
+            }
+
             int selected_count = 0;
             unsigned int pool_index = 0;
 
             // Use a while loop to select transactions
-            while (selected_count < TRANSACTIONS_PER_BLOCK && pool_index < *tx_pool.count)
+            while (selected_count < (int)TRANSACTIONS_PER_BLOCK && pool_index < *tx_pool.count)
             {
-                PendingTransaction *current_transaction = &tx_pool.transactions[pool_index];
+                unsigned int random_index = rand() % *tx_pool.count; // Generate a random index
+
+                // Check if the transaction has already been selected
+                if (selected_bitmap[random_index])
+                {
+                    continue; // Skip already selected transactions
+                }
+
+                PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
 
                 // Check if the transaction has a valid ID
-                if (current_transaction->tx.id != 0)
+                if (current_transaction->tx.tx_id != 0)
                 {
                     selected_transactions[selected_count++] = current_transaction->tx;
+                    selected_bitmap[random_index] = true; // Mark the transaction as selected
                 }
 
                 pool_index++; // Move to the next transaction in the pool
             }
 
-            free(selected_transactions);
+            // Free the bitmap after use
+            free(selected_bitmap);
 
             // Create a block
             TransactionBlock block;
@@ -199,7 +248,6 @@ void *miner_thread(void *arg)
             block.transactions = selected_transactions;
 
             // pow
-            char hash_buffer[HASH_SIZE];
             srand(time(NULL)); // Seed RNG
 
             PoWResult r;
@@ -211,23 +259,18 @@ void *miner_thread(void *arg)
 
             } while (r.error == 1 && !stop_threads);
 
-            print_transaction_block(&block);
+            log_info("Hash do bloco enviado %s: %s\n", block.txb_id, r.hash);
+            print_transaction_block(&block); // Print the block
 
             // Serialize the block to send via pipe
-            char block_data[1024]; // Adjust size as needed
-            snprintf(block_data, sizeof(block_data),
-                     "Block ID: %s\nPrevious Hash: %s\nTimestamp: %ld\nNonce: %u\nTransactions:\n",
-                     block.txb_id, block.previous_block_hash, block.timestamp, block.nonce);
-
-            for (int i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+            int BLOCK_BUFFER_SIZE = 2048; // Adjust size as needed
+            int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
+            if (BLOCK_BUFFER_SIZE > pipe_size)
             {
-                char tx_data[128];
-                snprintf(tx_data, sizeof(tx_data),
-                         "  Transaction %d: ID=%llu, Reward=%u, Value=%.2f, Timestamp=%ld\n",
-                         i, selected_transactions[i].id, selected_transactions[i].reward,
-                         selected_transactions[i].value, selected_transactions[i].timestamp);
-                strncat(block_data, tx_data, sizeof(block_data) - strlen(block_data) - 1);
+                log_info("Thread %d: Tamanho do buffer de envio de blocos para validation excede o tamanho do PIPE_BUFFER do sistema: writes atomicos nao garantidos.", thread_id);
             }
+            char block_data[BLOCK_BUFFER_SIZE]; // Adjust size as needed
+            serialize_transaction_block(&block, block_data, sizeof(block_data), TRANSACTIONS_PER_BLOCK);
 
             if (write(validation_pipe_fd, block_data, strlen(block_data) + 1) == -1)
             {
@@ -235,7 +278,7 @@ void *miner_thread(void *arg)
             }
             else
             {
-                log_info("Miner thread %d: Sent block to pipe:\n%s\n", thread_id, block_data);
+                log_info("Miner thread %d: Sent block to pipe: %s", thread_id, block_data);
             }
 
             free(selected_transactions);
@@ -249,6 +292,7 @@ void *miner_thread(void *arg)
         else
         {
             log_info("Thread %d: Not enough transactions in the pool to create a block", thread_id);
+            sleep(1); // Sleep for a while before checking again
         }
     }
 
@@ -258,7 +302,6 @@ void *miner_thread(void *arg)
 
 void miner()
 {
-
     // Abrir o semaforo para logs (já existente)
     sem_log_file = sem_open(SEM_LOG_FILE, 0);
     if (sem_log_file == SEM_FAILED)
@@ -318,31 +361,11 @@ void miner()
     }
 
     //////////////////////////////////////
-    // codigo a utilizar no validator
-    // Initialize the ledger
-    LedgerSHM *ledger = (LedgerSHM *)shm_ledger_base;
-    ledger->last_block_index = 5;
-    // snprintf(ledger->last_block_hash, HASH_SIZE, "HASH-LAST-BLOCK");
-    ledger->num_blocks = 10;
-    ledger->blocks_offset = sizeof(LedgerSHM);
-
-    ledger = (char *)shm_ledger_base + ledger->blocks_offset;
-
-    TransactionBlockSHM *block = (TransactionBlockSHM *)ledger;
-    strcpy(block->txb_id, "BLOCK-1 VAMOS CARALHO");
-    strcpy(block->previous_block_hash, "PREV-HASH");
-    block->timestamp = time(NULL);
-    block->nonce = 1000000;
-    block->num_transactions = 2;
 
     // Create the ledger Interface from shared memory
     ledgerInterface = interfaceLedger(shm_ledger_base);
-    ledgerInterface.blocks[0].transactions[0].id = 69;
-    ledgerInterface.blocks[0].transactions[1].id = 70;
-    ledgerInterface.blocks[0].transactions[0].value = 11.0;
-    ledgerInterface.blocks[1].txb_id[0] = 'B';
     // Print the ledger
-    print_ledger(&ledgerInterface);
+    // print_ledger(&ledgerInterface);
 
     // Free the dynamically allocated memory for blocks
 
@@ -367,28 +390,6 @@ void miner()
     pthread_t threads[NUM_MINERS];
     MinerThreadArgs thread_args[NUM_MINERS];
 
-    // CARECE DE SINCROINIZACAO
-    // CARECE DE SINCROINIZACAO
-    // CARECE DE SINCROINIZACAO
-
-    // bloco origem no validator?
-    char hash_buffer[HASH_SIZE];
-    srand(time(NULL)); // Seed RNG
-
-    // criar o bloco inicial (origem da blockchain)
-    TransactionBlock empty_block;
-    memset(&empty_block, 0, sizeof(TransactionBlock));
-    empty_block.transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
-    PoWResult r = proof_of_work(&empty_block);
-    if (r.error)
-    {
-        perror("MINER : Erro ao computar o hash do bloco origem\n");
-        exit(EXIT_FAILURE);
-    }
-    strcpy(hash_buffer, r.hash);
-
-    log_info("Hash Inicial: %s", hash_buffer);
-
     for (int i = 0; i < NUM_MINERS; i++)
     {
         thread_args[i].thread_id = i + 1;
@@ -411,6 +412,5 @@ void miner()
 
     log_info("Todas as miner threads terminaram.");
 
-    // fechar o semaforo para logs
     cleanup();
 }

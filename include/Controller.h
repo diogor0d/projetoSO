@@ -4,14 +4,14 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
+#ifndef CONTROLLER_H
+#define CONTROLLER_H
+
 #include <semaphore.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
-
-#ifndef CONTROLLER_H
-#define CONTROLLER_H
 
 #define CONFIG_FILE "config.cfg"
 #define LOG_FILE "DEIChain_log.txt"
@@ -25,17 +25,19 @@
 
 #define VALIDATION_PIPE "/tmp/validation_pipe"
 
+#define TX_ID_LEN 64
 #define HASH_SIZE 65 // SHA256_DIGEST_LENGTH * 2 + 1
 #define TXB_ID_LEN 64
 
 extern int NUM_MINERS;
-extern int TRANSACTIONS_PER_BLOCK;
+extern size_t TRANSACTIONS_PER_BLOCK;
 extern int BLOCKCHAIN_BLOCKS;
+extern int BLOCK_BUFFER_SIZE;
 
 typedef struct
 {
-    unsigned long long id;
-    unsigned int reward;
+    char tx_id[TX_ID_LEN];
+    int reward;
     float value;
     time_t timestamp;
 } Transaction;
@@ -100,7 +102,8 @@ typedef struct
     unsigned int last_block_index;   // índice do último bloco
     char last_block_hash[HASH_SIZE]; // hash do último bloco
     unsigned int num_blocks;         // número total de blocos
-    size_t blocks_offset;            // offset para o início dos blocos
+    unsigned int count;
+    size_t blocks_offset; // offset para o início dos blocos
 } LedgerSHM;
 
 typedef struct
@@ -108,6 +111,7 @@ typedef struct
     unsigned int *last_block_index;    // Pointer to the index of the last block
     char *last_block_hash;             // Pointer to the hash of the last block
     unsigned int *num_blocks;          // Pointer to the total number of blocks
+    unsigned int *count;               // Pointer to the count of blocks
     TransactionBlockInterface *blocks; // Pointer to the array of blocks in shared memory
 } LedgerInterface;
 

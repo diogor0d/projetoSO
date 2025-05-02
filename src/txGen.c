@@ -62,11 +62,10 @@ void sigint(int signum)
 void generate_transaction(PendingTransaction *p_tx, int reward)
 {
 
-    unsigned long long t_id = getpid() * 1000 + current_time_in_milliseconds() + tx_number;
-    tx_number++;
     Transaction new_tx;
 
-    new_tx.id = t_id;
+    snprintf(new_tx.tx_id, TX_ID_LEN, "TX-%d-%d", getpid(), tx_number);
+    tx_number++; // incrementar o número da transação
     new_tx.reward = reward;
     new_tx.value = (double)(rand() % 10000) / 100.0;
     new_tx.timestamp = time(NULL);
@@ -212,7 +211,7 @@ int main(int argc, char *argv[])
                     generate_transaction(&new_tx, reward);
                     tx_pool_interface.transactions[i] = new_tx;
                     (*tx_pool_interface.count)++;
-                    printf("Transação Gerada > ID: %llu, Reward: %d\n", new_tx.tx.id, new_tx.tx.reward);
+                    printf("Transação Gerada > ID: %s, Reward: %d\n", new_tx.tx.tx_id, new_tx.tx.reward);
                     break;
                 }
             }
