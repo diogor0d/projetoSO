@@ -1,15 +1,14 @@
 /* pow.c - Proof-of-Work implementation */
 
-#include "../../include/PoW/pow.h"
-
 #include <openssl/sha.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
-// #include "../../include/PoW/deichain.h"
-#include "../../include/Controller.h"
+#include "../../include/PoW/pow.h"
+
+size_t transactions_per_block;
 
 int get_max_transaction_reward(const TransactionBlock *block,
                                const int txs_per_block)
@@ -51,7 +50,7 @@ unsigned char *serialize_block(const TransactionBlock *block, size_t *sz_buf)
   memcpy(p, &block->timestamp, sizeof(time_t));
   p += sizeof(time_t);
 
-  for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; ++i)
+  for (size_t i = 0; i < transactions_per_block; ++i)
   {
     memcpy(p, &block->transactions[i], sizeof(Transaction));
     p += sizeof(Transaction);
@@ -59,6 +58,16 @@ unsigned char *serialize_block(const TransactionBlock *block, size_t *sz_buf)
 
   memcpy(p, &block->nonce, sizeof(unsigned int));
   p += sizeof(unsigned int);
+
+  /* // Print the serialized buffer
+  printf("Serialized Block (%zu bytes):\n", *sz_buf);
+  for (size_t i = 0; i < *sz_buf; ++i)
+  {
+    printf("%02x ", buffer[i]);
+    if ((i + 1) % 16 == 0) // Print 16 bytes per line
+      printf("\n");
+  }
+  printf("\n"); */
 
   return buffer;
 }
@@ -116,7 +125,7 @@ int check_difficulty(const char *hash, const int reward)
       return 1;
     break;
   default:
-    fprintf(stderr, "\n\nInvalid Difficult\n");
+    fprintf(stderr, "Invalid Difficult\n");
     exit(2);
   }
 
@@ -127,7 +136,7 @@ int check_difficulty(const char *hash, const int reward)
 int verify_nonce(const TransactionBlock *block)
 {
   char hash[SHA256_DIGEST_LENGTH * 2 + 1];
-  int reward = get_max_transaction_reward(block, TRANSACTIONS_PER_BLOCK);
+  int reward = get_max_transaction_reward(block, transactions_per_block);
   compute_sha256(block, hash);
   return check_difficulty(hash, reward);
 }
@@ -143,7 +152,7 @@ PoWResult proof_of_work(TransactionBlock *block)
 
   block->nonce = 0;
 
-  int reward = get_max_transaction_reward(block, TRANSACTIONS_PER_BLOCK);
+  int reward = get_max_transaction_reward(block, transactions_per_block);
 
   char hash[SHA256_DIGEST_LENGTH * 2 + 1];
   clock_t start = clock();

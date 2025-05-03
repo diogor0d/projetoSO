@@ -97,33 +97,6 @@ static void log_info(const char *format, ...)
     free(log_message);
 }
 
-void serialize_transaction_block(const TransactionBlock *block, char *output, size_t output_size, int transactions_per_block)
-{
-    if (block == NULL || output == NULL)
-    {
-        log_info("Bloco ou buffer de serialização invalidos.");
-        return;
-    }
-
-    // Start with the block metadata
-    snprintf(output, output_size,
-             "BID: %s PH: %s TS: %ld NON: %u,",
-             block->txb_id, block->previous_block_hash, block->timestamp, block->nonce);
-
-    // Append each transaction to the output
-    for (int i = 0; i < transactions_per_block; i++)
-    {
-        char tx_data[128];
-        snprintf(tx_data, sizeof(tx_data),
-                 "TI %d ID=%s R=%u V=%.2f TS=%ld,",
-                 i, block->transactions[i].tx_id, block->transactions[i].reward,
-                 block->transactions[i].value, block->transactions[i].timestamp);
-
-        // Ensure we don't exceed the output buffer size
-        strncat(output, tx_data, output_size - strlen(output) - 1);
-    }
-}
-
 static void cleanup()
 {
     freeLedger(&ledgerInterface);
@@ -187,9 +160,10 @@ void *miner_thread(void *arg)
         //  Create a temporary array to sort transactions
 
         // Copy transactions from the pool to the temporary array
-        if (*tx_pool.count > (unsigned int)TRANSACTIONS_PER_BLOCK && *ledgerInterface.count != 0)
+
+        // FALTA SINCRONIZACAO
+        if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *ledgerInterface.count > 0 && *ledgerInterface.count < BLOCKCHAIN_BLOCKS - 2)
         {
-            sleep(5);
             // incrementar o número do bloco
 
             // print_transaction_pool(&tx_pool);
@@ -243,6 +217,7 @@ void *miner_thread(void *arg)
 
             // Create a block
             TransactionBlock block;
+            memset(&block, 0, sizeof(TransactionBlock)); // Initialize the block to zero
             snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, block_number);
             strncpy(block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE); // alterar para o hash do bloco anterior
             block.transactions = selected_transactions;
@@ -259,28 +234,58 @@ void *miner_thread(void *arg)
 
             } while (r.error == 1 && !stop_threads);
 
-            log_info("Hash do bloco enviado %s: %s\n", block.txb_id, r.hash);
+            // debug
+            char hash[HASH_SIZE];
+            compute_sha256(&block, hash); // Compute the hash of the block
+
+            log_info("Hash do bloco enviado %s: %s\n", block.txb_id, hash);
             print_transaction_block(&block); // Print the block
 
             // Serialize the block to send via pipe
-            int BLOCK_BUFFER_SIZE = 2048; // Adjust size as needed
             int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
             if (BLOCK_BUFFER_SIZE > pipe_size)
             {
                 log_info("Thread %d: Tamanho do buffer de envio de blocos para validation excede o tamanho do PIPE_BUFFER do sistema: writes atomicos nao garantidos.", thread_id);
             }
-            char block_data[BLOCK_BUFFER_SIZE]; // Adjust size as needed
-            serialize_transaction_block(&block, block_data, sizeof(block_data), TRANSACTIONS_PER_BLOCK);
 
-            if (write(validation_pipe_fd, block_data, strlen(block_data) + 1) == -1)
+            size_t before_transactions = offsetof(TransactionBlock, transactions);
+            size_t after_transactions = sizeof(TransactionBlock) - offsetof(TransactionBlock, transactions) - sizeof(Transaction *);
+            size_t header_size = before_transactions + after_transactions;
+            size_t txs_size = sizeof(Transaction) * TRANSACTIONS_PER_BLOCK;
+            size_t total_payload_size = header_size + txs_size;
+            size_t total_size = sizeof(size_t) + total_payload_size;
+
+            char *buffer = malloc(total_size);
+            if (!buffer)
             {
-                perror("Miner thread: Failed to write to named pipe");
-            }
-            else
-            {
-                log_info("Miner thread %d: Sent block to pipe: %s", thread_id, block_data);
+                perror("malloc");
             }
 
+            // Store the size prefix
+            memcpy(buffer, &total_payload_size, sizeof(size_t));
+
+            // Copy the part of the block before transactions
+            memcpy(buffer + sizeof(size_t), &block, before_transactions);
+
+            // Copy the part after transactions (nonce and any padding)
+            char *after_transactions_src = (char *)&block + offsetof(TransactionBlock, transactions) + sizeof(Transaction *);
+            memcpy(buffer + sizeof(size_t) + before_transactions, after_transactions_src, after_transactions);
+
+            // Copy transactions array
+            memcpy(buffer + sizeof(size_t) + header_size, block.transactions, txs_size);
+
+            // ignorar o sipipe previne que o processo seja terminado quando nenhum validator estiver a ler do pipe, situação que podera ocorrer quando a ledger estiver cheia
+            signal(SIGPIPE, SIG_IGN);
+
+            // Write to pipe
+            ssize_t written = write(validation_pipe_fd, buffer, total_size);
+            if (written != total_size)
+            {
+                perror("write");
+            }
+            printf("PASSOU WRITE");
+
+            free(buffer);
             free(selected_transactions);
 
             // criar o bloco
@@ -288,6 +293,11 @@ void *miner_thread(void *arg)
             // snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, rand() % 1000);
 
             // computar PoW
+        }
+        else if (*ledgerInterface.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
+        {
+            log_info("Thread %d: Ledger is full. Stopping block creation.", thread_id);
+            break; // Exit the loop when the ledger is full
         }
         else
         {

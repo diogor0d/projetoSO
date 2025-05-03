@@ -8,7 +8,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra
+CFLAGS = -Wall -Wextra -g
 
 # Source files
 SRCS = src/Controller.c src/Miner.c src/SHMManagement.c src/Validator.c src/Statistics.c src/PoW/pow.c

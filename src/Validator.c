@@ -126,60 +126,6 @@ static void sigterm(int signum)
     exit(EXIT_SUCCESS);
 }
 
-void deserialize_transaction_block(const char *input, TransactionBlock *block, int transactions_per_block)
-{
-    if (input == NULL || block == NULL)
-    {
-        log_info("Input string ou bloco inválido para desserialização.");
-        return;
-    }
-
-    // Clear the block structure
-    memset(block, 0, sizeof(TransactionBlock));
-
-    // Parse the block metadata
-    const char *ptr = input;
-    sscanf(ptr, "BID: %s PH: %s TS: %ld NON: %u,",
-           block->txb_id,
-           block->previous_block_hash,
-           &block->timestamp,
-           &block->nonce);
-
-    // Allocate memory for transactions
-    block->transactions = (Transaction *)calloc(transactions_per_block, sizeof(Transaction));
-    if (block->transactions == NULL)
-    {
-        perror("Failed to allocate memory for transactions during deserialization");
-        exit(EXIT_FAILURE);
-    }
-
-    // Move the pointer past the block metadata
-    ptr = strchr(ptr, ',') + 1;
-
-    // Parse each transaction
-    for (int i = 0; i < transactions_per_block; i++)
-    {
-        char tx_id[TX_ID_LEN];
-        unsigned int reward;
-        double value;
-        time_t timestamp;
-
-        // Parse the transaction data
-        sscanf(ptr, "TI %d ID=%63s R=%u V=%lf TS=%ld,", // Use %63s to limit input to TX_ID_LEN - 1
-               &i, tx_id, &reward, &value, &timestamp);
-
-        // Populate the transaction
-        strncpy(block->transactions[i].tx_id, tx_id, TX_ID_LEN - 1);
-        block->transactions[i].tx_id[TX_ID_LEN - 1] = '\0'; // Ensure null termination
-        block->transactions[i].reward = reward;
-        block->transactions[i].value = value;
-        block->transactions[i].timestamp = timestamp;
-
-        // Move the pointer to the next transaction
-        ptr = strchr(ptr, ',') + 1;
-    }
-}
-
 void blkcpy(TransactionBlockInterface *dest, const TransactionBlock *src, int transactions_per_block)
 {
     if (dest == NULL || src == NULL)
@@ -319,46 +265,84 @@ void validator()
 
     log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
 
-    char buffer[1024]; // Adjust the buffer size as needed
-    ssize_t bytes_read;
-
-    while ((bytes_read = read(validation_pipe_fd, buffer, sizeof(buffer) - 1)) > 0)
+    while (*(ledgerInterface.count) < *(ledgerInterface.num_blocks))
     {
-        buffer[bytes_read] = '\0'; // Null-terminate the string
+        TransactionBlock streamed_block;
 
-        TransactionBlock block;
-        deserialize_transaction_block(buffer, &block, TRANSACTIONS_PER_BLOCK); // Deserialize the block
-
-        // Print the deserialized block
-        printf("\n\nBloco recebido: %s\n", block.txb_id);
-        char HASH_BUFFER[HASH_SIZE];
-        compute_sha256(&block, HASH_BUFFER);
-        log_info("Hash do bloco recebido: %s\n", HASH_BUFFER);
-        print_transaction_block(&block); // Print the block
-
-        // Check if the block is complient with difficult
-        if (!verify_nonce(&block))
+        size_t payload_size;
+        ssize_t read_bytes = read(validation_pipe_fd, &payload_size, sizeof(size_t));
+        if (read_bytes == 0)
         {
-            log_info("Bloco %s recebido tem NONCE invalida. Descartado.", block.txb_id);
-            continue;
+            // EOF — other side closed pipe
+            printf("Pipe closed. Exiting.\n");
+            break;
+        }
+        else if (read_bytes != sizeof(size_t))
+        {
+            perror("read (size)");
+            break;
         }
 
-        log_info("Novo bloco aprovado: %s", block.txb_id);
-        // compute the hash to pass to the next block as previous hash
-        compute_sha256(&block, ledgerInterface.last_block_hash);
-        // put on ledger
-        blkcpy(&ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1], &block, TRANSACTIONS_PER_BLOCK);
-        // print information
-        print_ledger(&ledgerInterface); // Print the ledger
-    }
+        char *buffer = malloc(payload_size);
+        if (!buffer)
+        {
+            perror("malloc");
+            break;
+        }
 
-    if (bytes_read == -1)
-    {
-        log_info("Error reading from pipe");
-    }
-    else if (bytes_read == 0)
-    {
-        log_info("Pipe closed by writer.\n");
+        read_bytes = read(validation_pipe_fd, buffer, payload_size);
+        if (read_bytes != payload_size)
+        {
+            perror("read (block)");
+            free(buffer);
+            break;
+        }
+
+        size_t header_size = sizeof(TransactionBlock) - sizeof(Transaction *);
+        memcpy(&streamed_block, buffer, header_size);
+
+        streamed_block.transactions = malloc(sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
+        if (!streamed_block.transactions)
+        {
+            perror("malloc transactions");
+            free(buffer);
+            break;
+        }
+
+        memcpy(streamed_block.transactions, buffer + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
+
+        log_info("Bloco recebido: %s", streamed_block.txb_id);
+
+        if (!verify_nonce(&streamed_block))
+        {
+            log_info("Bloco recebido com nonce inválido\n");
+        }
+
+        char hash[HASH_SIZE];
+        compute_sha256(&streamed_block, hash); // Compute the hash of the block
+
+        strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].txb_id, streamed_block.txb_id);
+        strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].previous_block_hash, streamed_block.previous_block_hash);
+        *(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].timestamp) = streamed_block.timestamp;
+        *(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].nonce) = streamed_block.nonce;
+
+        /* for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+        {
+            ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i] = streamed_block.transactions[i];
+        } */
+
+        strcpy(ledgerInterface.last_block_hash, hash);
+        (*(ledgerInterface.count))++;
+        (*(ledgerInterface.last_block_index))++;
+        log_info("Hash do bloco recebido: %s\n", hash);
+
+        log_info("Bloco aprovado:");
+        print_transaction_block(&streamed_block); // Your custom print function
+
+        print_ledger(&ledgerInterface); // Print the ledger
+
+        free(buffer);
+        free(streamed_block.transactions);
     }
 
     cleanup();

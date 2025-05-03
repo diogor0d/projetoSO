@@ -27,6 +27,7 @@
 
 int NUM_MINERS;
 size_t TRANSACTIONS_PER_BLOCK;
+size_t transactions_per_block; // para compatibilidade com o PoW
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE;
 int BLOCK_BUFFER_SIZE = 2048;
@@ -143,6 +144,7 @@ void parse_config()
         exit(EXIT_FAILURE);
     }
     TRANSACTIONS_PER_BLOCK = atoi(buffer);
+    transactions_per_block = TRANSACTIONS_PER_BLOCK; // para compatibilidade com o PoW
 
     if (fscanf(file, "BLOCKCHAIN_BLOCKS=%s\n", buffer) != 1 || !is_positive_integer(buffer))
     {

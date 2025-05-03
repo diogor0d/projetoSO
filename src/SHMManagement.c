@@ -1,6 +1,8 @@
 
 #include "../include/Controller.h"
 
+#include <string.h>
+
 TransactionPoolInterface interfaceTxPool(void *shm_base)
 {
     TransactionPoolInterface pool;
@@ -183,5 +185,86 @@ void print_transaction_pool(TransactionPoolInterface *tx_pool)
         {
             printf("  Transaction %u: Empty\n", i + 1);
         }
+    }
+}
+
+void serialize_transaction_block(const TransactionBlock *block, char *output, size_t output_size, int transactions_per_block)
+{
+    if (block == NULL || output == NULL)
+    {
+        printf("Bloco ou buffer de serialização invalidos.");
+        return;
+    }
+
+    // Start with the block metadata
+    snprintf(output, output_size,
+             "BID: %s PH: %s TS: %ld NON: %u,",
+             block->txb_id, block->previous_block_hash, block->timestamp, block->nonce);
+
+    // Append each transaction to the output
+    for (int i = 0; i < transactions_per_block; i++)
+    {
+        char tx_data[128];
+        snprintf(tx_data, sizeof(tx_data),
+                 "TI %d ID=%s R=%u V=%.2f TS=%ld,",
+                 i, block->transactions[i].tx_id, block->transactions[i].reward,
+                 block->transactions[i].value, block->transactions[i].timestamp);
+
+        // Ensure we don't exceed the output buffer size
+        strncat(output, tx_data, output_size - strlen(output) - 1);
+    }
+}
+
+void deserialize_transaction_block(const char *input, TransactionBlock *block, int transactions_per_block)
+{
+    if (input == NULL || block == NULL)
+    {
+        printf("Input string ou bloco inválido para desserialização.");
+        return;
+    }
+
+    // Clear the block structure
+    memset(block, 0, sizeof(TransactionBlock));
+
+    // Parse the block metadata
+    const char *ptr = input;
+    sscanf(ptr, "BID: %s PH: %s TS: %ld NON: %u,",
+           block->txb_id,
+           block->previous_block_hash,
+           &block->timestamp,
+           &block->nonce);
+
+    // Allocate memory for transactions
+    block->transactions = (Transaction *)calloc(transactions_per_block, sizeof(Transaction));
+    if (block->transactions == NULL)
+    {
+        perror("Failed to allocate memory for transactions during deserialization");
+        exit(EXIT_FAILURE);
+    }
+
+    // Move the pointer past the block metadata
+    ptr = strchr(ptr, ',') + 1;
+
+    // Parse each transaction
+    for (int i = 0; i < transactions_per_block; i++)
+    {
+        char tx_id[TX_ID_LEN];
+        unsigned int reward;
+        double value;
+        time_t timestamp;
+
+        // Parse the transaction data
+        sscanf(ptr, "TI %d ID=%63s R=%u V=%lf TS=%ld,", // Use %63s to limit input to TX_ID_LEN - 1
+               &i, tx_id, &reward, &value, &timestamp);
+
+        // Populate the transaction
+        strncpy(block->transactions[i].tx_id, tx_id, TX_ID_LEN - 1);
+        block->transactions[i].tx_id[TX_ID_LEN - 1] = '\0'; // Ensure null termination
+        block->transactions[i].reward = reward;
+        block->transactions[i].value = value;
+        block->transactions[i].timestamp = timestamp;
+
+        // Move the pointer to the next transaction
+        ptr = strchr(ptr, ',') + 1;
     }
 }

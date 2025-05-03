@@ -31,6 +31,7 @@
 
 extern int NUM_MINERS;
 extern size_t TRANSACTIONS_PER_BLOCK;
+extern size_t transactions_per_block;
 extern int BLOCKCHAIN_BLOCKS;
 extern int BLOCK_BUFFER_SIZE;
 
@@ -86,14 +87,16 @@ typedef struct
 } TransactionBlockInterface;
 
 // Por forma a minimizar trabalho adicional, esta estrutura aparentemente redundante, serve apenas para poder recorrer às funções de hashing e de verificação de nonce (pow.c), uma vez que a estrutura TransactionBlockInterface não pode ser utilizada diretamente na shared memory, devido à presença de ponteiros.
+#pragma pack(push, 1) // assegurar consistencia no alinhamento das estruturas - importante para a serialização
 typedef struct
 {
     char txb_id[TXB_ID_LEN]; // Unique block ID (e.g., ThreadID + #)
     char previous_block_hash[HASH_SIZE];
-    time_t timestamp;          // Pointer to the timestamp in shared memory
-    unsigned int nonce;        // Pointer to the nonce in shared memory
-    Transaction *transactions; // Pointer to the array of transactions in shared memory
+    time_t timestamp;
+    unsigned int nonce;
+    Transaction *transactions;
 } TransactionBlock;
+#pragma pack(pop)
 
 // Esta estrutura representa um block instanciado
 

@@ -2,8 +2,7 @@
 #ifndef POW_H
 #define POW_H
 
-// #include "../../include/PoW/deichain.h"
-#include "../../include/Controller.h"
+#include "../Controller.h"
 
 #define POW_MAX_OPS 10000000
 
@@ -11,7 +10,7 @@
   "00006a8e76f31ba74e21a092cca1015a418c9d5f4375e7a4fec676e1d2ec1436"
 
 #ifndef DEBUG
-#define DEBUG 1
+#define DEBUG 0
 #endif
 
 /* Definition of Difficulty Levels */
