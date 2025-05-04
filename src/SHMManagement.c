@@ -3,6 +3,10 @@
 
 #include <string.h>
 
+size_t TRANSACTIONS_PER_BLOCK;
+int BLOCKCHAIN_BLOCKS;
+int TRANSACTION_POOL_SIZE;
+
 TransactionPoolInterface interfaceTxPool(void *shm_base)
 {
     TransactionPoolInterface pool;
@@ -24,16 +28,16 @@ TransactionBlockInterface interfaceTxBlock(void *shm_base, size_t block_offset)
 
     // Map the shared memory block
     TransactionBlockSHM *shm_block = (TransactionBlockSHM *)((char *)shm_base + block_offset);
+    shm_block->transactions_offset = sizeof(TransactionBlockSHM);
 
     // Set pointers to the fields in shared memory
     block.txb_id = shm_block->txb_id;
     block.previous_block_hash = shm_block->previous_block_hash;
     block.timestamp = &shm_block->timestamp;
     block.nonce = &shm_block->nonce;
-    block.num_transactions = &shm_block->num_transactions;
 
     // Set the pointer to the transactions array in shared memory
-    block.transactions = (Transaction *)((char *)shm_base + shm_block->transactions_offset);
+    block.transactions = (Transaction *)((char *)shm_block + shm_block->transactions_offset);
 
     return block;
 }
@@ -66,7 +70,7 @@ LedgerInterface interfaceLedger(void *shm_base)
         ledger.blocks[i] = interfaceTxBlock(shm_base, blocks_offset);
 
         // Increment the offset to the next block
-        blocks_offset += sizeof(TransactionBlockSHM) + (*ledger.blocks[i].num_transactions * sizeof(Transaction));
+        blocks_offset += sizeof(TransactionBlockSHM) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
     }
 
     return ledger;
@@ -92,6 +96,35 @@ void freeLedger(LedgerInterface *ledger)
     ledger->num_blocks = NULL;
 }
 
+void print_transaction_block_interface(const TransactionBlockInterface *block)
+{
+    if (block == NULL)
+    {
+        printf("TransactionBlockInterface is NULL.\n");
+        return;
+    }
+
+    printf("Transaction Block Interface:\n");
+    printf("  Block ID: %s\n", block->txb_id);
+    printf("  Previous Block Hash: %s\n", block->previous_block_hash);
+    printf("  Timestamp: %ld\n", block->timestamp ? *block->timestamp : 0);
+    printf("  Nonce: %u\n", block->nonce ? *block->nonce : 0);
+
+    if (block->transactions == NULL)
+    {
+        printf("  Transactions: NULL\n");
+        return;
+    }
+
+    printf("  Transactions:\n");
+    for (unsigned int i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+    {
+        Transaction *tx = &block->transactions[i];
+        printf("    Transaction %u: ID=%s, Reward=%d, Value=%.2f, Timestamp=%ld\n",
+               i + 1, tx->tx_id, tx->reward, tx->value, tx->timestamp);
+    }
+}
+
 void print_ledger(const LedgerInterface *ledger)
 {
     if (ledger == NULL || ledger->blocks == NULL)
@@ -100,7 +133,7 @@ void print_ledger(const LedgerInterface *ledger)
         return;
     }
 
-    printf("Ledger:\n");
+    printf("\nLedger:\n");
     printf("Last Block Index: %u\n", *ledger->last_block_index);
     printf("Last Block Hash: %s\n", ledger->last_block_hash);
     printf("Number of Blocks: %u\n", *ledger->num_blocks);
@@ -110,14 +143,9 @@ void print_ledger(const LedgerInterface *ledger)
     {
         TransactionBlockInterface block = ledger->blocks[i];
 
-        printf("\nBlock %u:\n", i);
-        printf("  Block ID: %s\n", block.txb_id);
-        printf("  Previous Block Hash: %s\n", block.previous_block_hash);
-        printf("  Timestamp: %ld\n", *block.timestamp);
-        printf("  Nonce: %u\n", *block.nonce);
-        printf("  Number of Transactions: %u\n", *block.num_transactions);
+        printf("Block %u: ID=%s, Previous Hash=%s, Timestamp=%ld, Nonce=%u\n", i, block.txb_id, block.previous_block_hash, *block.timestamp, *block.nonce);
 
-        for (unsigned int j = 0; j < *block.num_transactions; j++)
+        for (unsigned int j = 0; j < TRANSACTIONS_PER_BLOCK; j++)
         {
             Transaction tx = block.transactions[j];
             printf("    Transaction %u: ID=%s, Reward=%u, Value=%.2f, Timestamp=%ld\n",
@@ -156,6 +184,18 @@ void print_transaction_block(const TransactionBlock *block)
     }
 }
 
+void print_transaction(const Transaction *tx)
+{
+    if (tx == NULL)
+    {
+        printf("Transaction is NULL.\n");
+        return;
+    }
+
+    printf("Transaction: ID=%s, Reward=%d, Value=%.2f, Timestamp=%ld\n",
+           tx->tx_id, tx->reward, tx->value, tx->timestamp);
+}
+
 // Function to print the TransactionPoolInterface
 void print_transaction_pool(TransactionPoolInterface *tx_pool)
 {
@@ -165,7 +205,7 @@ void print_transaction_pool(TransactionPoolInterface *tx_pool)
         return;
     }
 
-    printf("Transaction Pool:\n");
+    printf("\nTransaction Pool:\n");
     printf("  Size: %u\n", *tx_pool->size);
     printf("  Count: %u\n", *tx_pool->count);
 
@@ -174,12 +214,7 @@ void print_transaction_pool(TransactionPoolInterface *tx_pool)
         PendingTransaction *pt = &tx_pool->transactions[i];
         if (pt->filled)
         {
-            printf("  Transaction %u:\n", i + 1);
-            printf("    ID: %s\n", pt->tx.tx_id);
-            printf("    Reward: %u\n", pt->tx.reward);
-            printf("    Value: %.2f\n", pt->tx.value);
-            printf("    Timestamp: %ld\n", pt->tx.timestamp);
-            printf("    Age: %u\n", pt->age);
+            printf("  Transaction %u: ID=%s, Reward=%u, Value=%.2f, Timestamp=%ld, Age=%u\n", i + 1, pt->tx.tx_id, pt->tx.reward, pt->tx.value, pt->tx.timestamp, pt->age);
         }
         else
         {

@@ -16,6 +16,8 @@ void freeLedger(LedgerInterface *ledger);
 void print_ledger(const LedgerInterface *ledger);
 void print_transaction_block(const TransactionBlock *block);
 void print_transaction_pool(const TransactionPoolInterface *pool);
+void print_transaction(const Transaction *tx);
+void print_transaction_block_interface(const TransactionBlockInterface *block);
 
 void serialize_transaction_block(const TransactionBlock *block, char *output, size_t output_size, int transactions_per_block);
 void deserialize_transaction_block(const char *input, TransactionBlock *block, int transactions_per_block);

@@ -380,7 +380,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-    shm_ledger_size = sizeof(LedgerSHM) + BLOCKCHAIN_BLOCKS * sizeof(TransactionBlockSHM);
+    shm_ledger_size = sizeof(LedgerSHM) + BLOCKCHAIN_BLOCKS * sizeof(TransactionBlockSHM) + BLOCKCHAIN_BLOCKS * TRANSACTIONS_PER_BLOCK * sizeof(Transaction);
     if (ftruncate(shm_ledger_fd, shm_ledger_size) == -1)
     {
         log_info("Erro ao definir o tamanho de SHM_LEDGER");

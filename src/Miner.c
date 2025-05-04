@@ -150,6 +150,8 @@ void *miner_thread(void *arg)
 
     log_info("Miner thread %d (PID: %d) em execução...", thread_id, getpid());
 
+    // print_ledger(&ledgerInterface); // Print the ledger
+
     int block_number = 0;
 
     while (!stop_threads)
@@ -162,8 +164,10 @@ void *miner_thread(void *arg)
         // Copy transactions from the pool to the temporary array
 
         // FALTA SINCRONIZACAO
-        if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *ledgerInterface.count > 0 && *ledgerInterface.count < BLOCKCHAIN_BLOCKS - 2)
+
+        if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
+
             // incrementar o número do bloco
 
             // print_transaction_pool(&tx_pool);
@@ -195,10 +199,11 @@ void *miner_thread(void *arg)
                 unsigned int random_index = rand() % *tx_pool.count; // Generate a random index
 
                 // Check if the transaction has already been selected
-                if (selected_bitmap[random_index])
-                {
-                    continue; // Skip already selected transactions
-                }
+                /*  if (selected_bitmap[random_index])
+                 {
+                     if
+                     continue; // Skip already selected transactions
+                 } */
 
                 PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
 
@@ -279,11 +284,11 @@ void *miner_thread(void *arg)
 
             // Write to pipe
             ssize_t written = write(validation_pipe_fd, buffer, total_size);
-            if (written != total_size)
+            if ((size_t)written != total_size)
             {
-                perror("write");
+                log_info("Thread %d: Erro ao escrever no pipe de validação", thread_id);
+                sleep(10);
             }
-            printf("PASSOU WRITE");
 
             free(buffer);
             free(selected_transactions);
@@ -296,13 +301,19 @@ void *miner_thread(void *arg)
         }
         else if (*ledgerInterface.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
-            log_info("Thread %d: Ledger is full. Stopping block creation.", thread_id);
+            log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
             break; // Exit the loop when the ledger is full
         }
         else
         {
-            log_info("Thread %d: Not enough transactions in the pool to create a block", thread_id);
-            sleep(1); // Sleep for a while before checking again
+            // debug condicao
+            log_info("Debug: tx_pool.count = %d, TRANSACTIONS_PER_BLOCK = %zu, ledgerInterface.count = %d, BLOCKCHAIN_BLOCKS = %d",
+                     *tx_pool.count, TRANSACTIONS_PER_BLOCK, *ledgerInterface.count, BLOCKCHAIN_BLOCKS);
+
+            // print_ledger(&ledgerInterface); // Print the ledger")
+            log_info("Thread %d: Não há transações suficientes para construir um novo bloco", thread_id);
+            print_transaction_pool(&tx_pool); // Print the transaction pool
+            sleep(1);                         // Sleep for a while before checking again
         }
     }
 
@@ -362,6 +373,7 @@ void miner()
     }
 
     // mapear a memoria partilhada para o espaço de memória do processo
+    log_info("Tamanho da ledger: %d", shm_ledger_size);
     shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
     if (shm_ledger_base == MAP_FAILED)
     {
@@ -374,6 +386,7 @@ void miner()
 
     // Create the ledger Interface from shared memory
     ledgerInterface = interfaceLedger(shm_ledger_base);
+
     // Print the ledger
     // print_ledger(&ledgerInterface);
 

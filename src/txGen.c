@@ -207,7 +207,6 @@ int main(int argc, char *argv[])
                 {
 
                     PendingTransaction new_tx;
-                    // acrescentou-se o tempo para garantir unicidade dos ids
                     generate_transaction(&new_tx, reward);
                     tx_pool_interface.transactions[i] = new_tx;
                     (*tx_pool_interface.count)++;

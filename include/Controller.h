@@ -31,7 +31,7 @@
 
 extern int NUM_MINERS;
 extern size_t TRANSACTIONS_PER_BLOCK;
-extern size_t transactions_per_block;
+extern size_t transactions_per_block; // para compatibilidade com o PoW (sem o modificar)
 extern int BLOCKCHAIN_BLOCKS;
 extern int BLOCK_BUFFER_SIZE;
 
@@ -72,18 +72,16 @@ typedef struct
     char previous_block_hash[HASH_SIZE];
     time_t timestamp;
     unsigned int nonce;
-    unsigned int num_transactions;
     size_t transactions_offset;
 } TransactionBlockSHM;
 
 typedef struct
 {
-    char *txb_id;                   // Pointer to the block ID in shared memory
-    char *previous_block_hash;      // Pointer to the previous block hash in shared memory
-    time_t *timestamp;              // Pointer to the timestamp in shared memory
-    unsigned int *nonce;            // Pointer to the nonce in shared memory
-    unsigned int *num_transactions; // Pointer to the number of transactions in shared memory
-    Transaction *transactions;      // Pointer to the array of transactions in shared memory
+    char *txb_id;              // Pointer to the block ID in shared memory
+    char *previous_block_hash; // Pointer to the previous block hash in shared memory
+    time_t *timestamp;         // Pointer to the timestamp in shared memory
+    unsigned int *nonce;       // Pointer to the nonce in shared memory
+    Transaction *transactions; // Pointer to the array of transactions in shared memory
 } TransactionBlockInterface;
 
 // Por forma a minimizar trabalho adicional, esta estrutura aparentemente redundante, serve apenas para poder recorrer às funções de hashing e de verificação de nonce (pow.c), uma vez que a estrutura TransactionBlockInterface não pode ser utilizada diretamente na shared memory, devido à presença de ponteiros.
