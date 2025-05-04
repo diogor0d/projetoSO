@@ -87,7 +87,7 @@ static void log_info(const char *format, ...)
     // Escrever a mensagem de log no ficheiro e no stdout
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
     fflush(stdout);
 
     // desbloquear o semáforo
@@ -248,10 +248,6 @@ void *miner_thread(void *arg)
 
             // Serialize the block to send via pipe
             int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
-            if (BLOCK_BUFFER_SIZE > pipe_size)
-            {
-                log_info("Thread %d: Tamanho do buffer de envio de blocos para validation excede o tamanho do PIPE_BUFFER do sistema: writes atomicos nao garantidos.", thread_id);
-            }
 
             size_t before_transactions = offsetof(TransactionBlock, transactions);
             size_t after_transactions = sizeof(TransactionBlock) - offsetof(TransactionBlock, transactions) - sizeof(Transaction *);
@@ -259,6 +255,11 @@ void *miner_thread(void *arg)
             size_t txs_size = sizeof(Transaction) * TRANSACTIONS_PER_BLOCK;
             size_t total_payload_size = header_size + txs_size;
             size_t total_size = sizeof(size_t) + total_payload_size;
+
+            if ((int)total_size > pipe_size)
+            {
+                log_info("Thread %d: Tamanho do bloco a enviar excede o tamanho do PIPE_BUFFER do sistema: writes/reads atomicos nao garantidos.", thread_id);
+            }
 
             char *buffer = malloc(total_size);
             if (!buffer)

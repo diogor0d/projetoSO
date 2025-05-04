@@ -34,7 +34,7 @@ int BLOCK_BUFFER_SIZE = 2048;
 
 // Definições de semáforos e memória partilhada para acesso global
 
-static sem_t *sem_transactions_pool, *sem_ledger;
+static sem_t *sem_transactions_pool, *sem_ledger, *sem_pipe_validators;
 static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
 static int shm_transactionspool_fd, shm_ledger_fd;
@@ -101,7 +101,7 @@ static void log_info(const char *format, ...)
     // Escrever a mensagem de log no ficheiro e no stdout
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
     fflush(stdout);
 
     // desbloquear o semáforo
@@ -228,6 +228,12 @@ static void cleanup()
         log_info("Erro ao fechar semáforo SEM_LEDGER");
     }
 
+    // pipe validators
+    if (sem_close(sem_pipe_validators) == -1)
+    {
+        log_info("Erro ao fechar semáforo SEM_PIPE_VALIDATORS");
+    }
+
     // log file
     if (sem_close(sem_log_file) == -1)
     {
@@ -244,6 +250,11 @@ static void cleanup()
     if (sem_unlink(SEM_LEDGER) == -1)
     {
         log_info("Erro ao desvincular semáforo SEM_LEDGER");
+    }
+    // ledger
+    if (sem_unlink(SEM_PIPE_VALIDATORS) == -1)
+    {
+        log_info("Erro ao desvincular semáforo SEM_PIPE_VALIDATORS");
     }
     // log file
     if (sem_unlink(SEM_LOG_FILE) == -1)
@@ -331,6 +342,15 @@ int main()
     if (sem_ledger == SEM_FAILED)
     {
         log_info("Erro ao criar semáforo para LEDGER");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+
+    // semaforo pipe_validators
+    sem_pipe_validators = sem_open(SEM_PIPE_VALIDATORS, O_CREAT, 0666, 1);
+    if (sem_pipe_validators == SEM_FAILED)
+    {
+        log_info("Erro ao criar semáforo para PIPE VALIDATORS");
         cleanup();
         exit(EXIT_FAILURE);
     }
