@@ -185,18 +185,18 @@ int main(int argc, char *argv[])
 
     srand(time(NULL));
 
+    // O facto das transações estarem na shared memory impede o uso direto de ponteiros, que apenas dizem respeito ao espaço de endereçamento do processo atual. Portanto, é necessário recorrer a offsets para manipular o acesso aos dados em cada processo que acede à shared memory. Para isso, utiliza-se uma interface local de acesso à transactions pool que aponta para os dados na memoria mapeada para a shared memory.
+    TransactionPoolInterface tx_pool_interface = interfaceTxPool(shm_base);
+
     while (1)
     {
-
+        printf("Semaforo bloqueado...\n");
         // Bloquear o semáforo antes de escrever na pool
         if (sem_wait(sem_tx_pool) == -1)
         {
             perror("Erro ao bloquear o semáforo");
             break;
         }
-
-        // O facto das transações estarem na shared memory impede o uso direto de ponteiros, que apenas dizem respeito ao espaço de endereçamento do processo atual. Portanto, é necessário recorrer a offsets para manipular o acesso aos dados em cada processo que acede à shared memory. Para isso, utiliza-se uma interface local de acesso à transactions pool que aponta para os dados na memoria mapeada para a shared memory.
-        TransactionPoolInterface tx_pool_interface = interfaceTxPool(shm_base);
 
         if (*tx_pool_interface.count < *tx_pool_interface.size)
         {
@@ -226,9 +226,9 @@ int main(int argc, char *argv[])
             perror("Erro ao desbloquear o semáforo");
             break;
         }
+        printf("Semaforo desbloqueado...\n");
 
         usleep(sleep_time * 1000);
-        ;
     }
 
     cleanup();

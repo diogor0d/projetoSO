@@ -138,6 +138,7 @@ int verify_nonce(const TransactionBlock *block)
   char hash[SHA256_DIGEST_LENGTH * 2 + 1];
   int reward = get_max_transaction_reward(block, transactions_per_block);
   compute_sha256(block, hash);
+
   return check_difficulty(hash, reward);
 }
 

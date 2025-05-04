@@ -157,9 +157,9 @@ void *miner_thread(void *arg)
     while (!stop_threads)
     {
 
-        log_info("Transacoes na pool: %d", *tx_pool.count);
-        // printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
-        //  Create a temporary array to sort transactions
+        // log_info("Transacoes na pool: %d", *tx_pool.count);
+        //  printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
+        //   Create a temporary array to sort transactions
 
         // Copy transactions from the pool to the temporary array
 
@@ -243,8 +243,8 @@ void *miner_thread(void *arg)
             char hash[HASH_SIZE];
             compute_sha256(&block, hash); // Compute the hash of the block
 
-            log_info("Hash do bloco enviado %s: %s\n", block.txb_id, hash);
-            print_transaction_block(&block); // Print the block
+            // log_info("Hash do bloco enviado %s: %s\n", block.txb_id, hash);
+            // print_transaction_block(&block); // Print the block
 
             // Serialize the block to send via pipe
             int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
@@ -280,7 +280,7 @@ void *miner_thread(void *arg)
             memcpy(buffer + sizeof(size_t) + header_size, block.transactions, txs_size);
 
             // ignorar o sipipe previne que o processo seja terminado quando nenhum validator estiver a ler do pipe, situação que podera ocorrer quando a ledger estiver cheia
-            signal(SIGPIPE, SIG_IGN);
+            // signal(SIGPIPE, SIG_IGN);
 
             // Write to pipe
             ssize_t written = write(validation_pipe_fd, buffer, total_size);
@@ -307,13 +307,12 @@ void *miner_thread(void *arg)
         else
         {
             // debug condicao
-            log_info("Debug: tx_pool.count = %d, TRANSACTIONS_PER_BLOCK = %zu, ledgerInterface.count = %d, BLOCKCHAIN_BLOCKS = %d",
-                     *tx_pool.count, TRANSACTIONS_PER_BLOCK, *ledgerInterface.count, BLOCKCHAIN_BLOCKS);
+            // log_info("Debug: tx_pool.count = %d, TRANSACTIONS_PER_BLOCK = %zu, ledgerInterface.count = %d, BLOCKCHAIN_BLOCKS = %d", *tx_pool.count, TRANSACTIONS_PER_BLOCK, *ledgerInterface.count, BLOCKCHAIN_BLOCKS);
 
             // print_ledger(&ledgerInterface); // Print the ledger")
-            log_info("Thread %d: Não há transações suficientes para construir um novo bloco", thread_id);
-            print_transaction_pool(&tx_pool); // Print the transaction pool
-            sleep(1);                         // Sleep for a while before checking again
+            // log_info("Thread %d: Não há transações suficientes para construir um novo bloco", thread_id);
+            // print_transaction_pool(&tx_pool); // Print the transaction pool
+            sleep(1); // Sleep for a while before checking again
         }
     }
 

@@ -346,7 +346,7 @@ void validator()
 
         memcpy(streamed_block.transactions, buffer + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
 
-        log_info("Bloco recebido: %s", streamed_block.txb_id);
+        log_info("Bloco recebido: %s\n", streamed_block.txb_id);
 
         if (!verify_nonce(&streamed_block))
         {
@@ -356,7 +356,7 @@ void validator()
             continue; // avançar para a receção de um proximo bloco
         }
 
-        if (strcmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash) != 0)
+        if (strncmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE) != 0)
         {
             log_info("Bloco recebido com hash anterior inválido - Bloco %s rejeitado", streamed_block.txb_id);
             free(buffer);
@@ -367,11 +367,14 @@ void validator()
         // print_transaction_pool(&tx_pool); // Print the transaction pool
 
         // verificar se todas as transacoes do bloco se encontram na transactions pool
+        printf("\nSem tx pool");
         if (sem_wait(sem_tx_pool) == -1)
         {
             perror("Erro ao bloquear o semáforo");
             break;
         }
+        int skip_block = 0; // Flag to indicate whether to skip the block
+
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
             log_info("Verificando transação %s", streamed_block.transactions[i].tx_id);
@@ -380,13 +383,11 @@ void validator()
             {
                 if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
                 {
-                    // comparar a integridade da transação
                     if (txCompare(&streamed_block.transactions[i], &tx_pool.transactions[j].tx) == 0)
                     {
                         log_info("Conteudo transação %s referenciada difere da transacao na transactions pool. Bloco %s rejeitado", streamed_block.transactions[i].tx_id, streamed_block.txb_id);
-                        free(buffer);
-                        free(streamed_block.transactions);
-                        break; // avançar para a receção de um proximo bloco
+                        skip_block = 1; // Mark the block as invalid
+                        break;
                     }
                     found = 1;
                     break;
@@ -395,10 +396,31 @@ void validator()
             if (!found)
             {
                 log_info("Transação %s não encontrada na transactions pool. Bloco %s rejeitado", streamed_block.transactions[i].tx_id, streamed_block.txb_id);
-                free(buffer);
-                free(streamed_block.transactions);
-                continue; // avançar para a receção de um proximo bloco
+                skip_block = 1; // Mark the block as invalid
+                break;
             }
+            if (skip_block)
+            {
+                break; // Exit the `for` loop early if the block is invalid
+            }
+        }
+
+        if (skip_block)
+        {
+            if (buffer)
+            {
+                free(buffer);
+            }
+            if (streamed_block.transactions)
+            {
+                free(streamed_block.transactions);
+            }
+            if (sem_post(sem_tx_pool) == -1)
+            {
+                perror("Erro ao desbloquear o semáforo");
+                break;
+            }
+            continue; // Skip the rest of the `while (1)` loop iteration
         }
 
         // remover transacoes da transactions pool
@@ -461,7 +483,7 @@ void validator()
 
         log_info("Hash do bloco recebido: %s\n", hash);
 
-        log_info("BLOCO STREAMED");
+        log_info("BLOCO STREAMED\n");
         print_transaction_block(&streamed_block); // Print the block
 
         strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].txb_id, streamed_block.txb_id);
@@ -487,8 +509,8 @@ void validator()
             ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].value = streamed_block.transactions[i].value;
             ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].timestamp = streamed_block.transactions[i].timestamp;
         }
-        log_info("DEBUG BLOCO:");
-        print_transaction_block_interface(&ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1]);
+        // log_info("DEBUG BLOCO:");
+        //  print_transaction_block_interface(&ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1]);
 
         strcpy(ledgerInterface.last_block_hash, hash);
         (*(ledgerInterface.count))++;
