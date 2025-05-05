@@ -345,41 +345,47 @@ void validator(int num)
 
     while (1)
     {
-
-        TransactionBlock streamed_block;
-
-        size_t payload_size;
-
-        ssize_t read_bytes = read(validation_pipe_fd, &payload_size, sizeof(size_t));
-        if (read_bytes == 0)
-        {
-            // EOF — other side closed pipe
-            printf("Pipe closed. Exiting.\n");
-            break;
-        }
-        else if (read_bytes != sizeof(size_t))
-        {
-            perror("read (size)");
-            break;
-        }
-
-        char *buffer = malloc(payload_size);
+        // tamanho - "header" - transacoes
+        size_t MAX_BLOCK_SIZE = sizeof(size_t) + (sizeof(TransactionBlock) - sizeof(Transaction *)) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
+        char *buffer = malloc(MAX_BLOCK_SIZE);
         if (!buffer)
         {
             perror("malloc");
             break;
         }
 
-        read_bytes = read(validation_pipe_fd, buffer, payload_size);
-        if ((size_t)read_bytes != payload_size)
+        ssize_t read_bytes = read(validation_pipe_fd, buffer, MAX_BLOCK_SIZE);
+        if (read_bytes <= 0)
         {
-            perror("read (block)");
+            perror("read");
             free(buffer);
             break;
         }
 
+        if ((size_t)read_bytes < sizeof(size_t))
+        {
+            fprintf(stderr, "Read too short for size header\n");
+            free(buffer);
+            break;
+        }
+
+        size_t payload_size;
+        memcpy(&payload_size, buffer, sizeof(size_t));
+
+        // Check if the payload size matches remaining data
+        if ((size_t)read_bytes != sizeof(size_t) + payload_size)
+        {
+            fprintf(stderr, "Mismatch: expected payload size %zu, got %zu\n", payload_size, read_bytes - sizeof(size_t));
+            free(buffer);
+            break;
+        }
+
+        // Now parse the payload
+        char *payload = buffer + sizeof(size_t);
+        TransactionBlock streamed_block;
+
         size_t header_size = sizeof(TransactionBlock) - sizeof(Transaction *);
-        memcpy(&streamed_block, buffer, header_size);
+        memcpy(&streamed_block, payload, header_size);
 
         streamed_block.transactions = malloc(sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
         if (!streamed_block.transactions)
@@ -389,7 +395,7 @@ void validator(int num)
             break;
         }
 
-        memcpy(streamed_block.transactions, buffer + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
+        memcpy(streamed_block.transactions, payload + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
 
         log_info("Bloco recebido: %s\n", streamed_block.txb_id);
 

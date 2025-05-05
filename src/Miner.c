@@ -55,6 +55,12 @@ typedef struct
     int thread_id;
 } MinerThreadArgs;
 
+typedef struct
+{
+    sigset_t *set;
+    pthread_t *threads;
+} SignalHandlerArgs;
+
 static void log_info(const char *format, ...)
 {
 
@@ -161,7 +167,10 @@ static void cleanup()
 
 void *signal_handler_thread(void *arg)
 {
-    sigset_t *set = (sigset_t *)arg;
+    SignalHandlerArgs *args = (SignalHandlerArgs *)arg;
+    sigset_t *set = args->set;
+    pthread_t *threads = args->threads;
+
     int sig;
 
     // Wait for SIGTERM
@@ -170,7 +179,12 @@ void *signal_handler_thread(void *arg)
         if (sig == SIGTERM)
         {
             log_info("SIGTERM recebido. A terminar as miner threads...");
-            stop_threads = 1; // Signal threads to stop
+
+            // terminar todas as miner threads
+            for (int i = 0; i < NUM_MINERS; i++)
+            {
+                pthread_cancel(threads[i]); // Send cancellation request
+            }
         }
     }
 
@@ -182,13 +196,13 @@ void *miner_thread(void *arg)
     MinerThreadArgs *args = (MinerThreadArgs *)arg;
     int thread_id = args->thread_id;
 
-    log_info("Miner thread %d (PID: %d) em execução...", thread_id, getpid());
+    log_info("Thread %d em execução...", thread_id);
 
     // print_ledger(&ledgerInterface); // Print the ledger
 
     int block_number = 0;
 
-    while (!stop_threads) // pthread cancel
+    while (1) // pthread cancel
     {
 
         // log_info("Transacoes na pool: %d", *tx_pool.count);
@@ -213,7 +227,7 @@ void *miner_thread(void *arg)
             Transaction *selected_transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
             if (selected_transactions == NULL)
             {
-                log_info("Thread %d: Failed to allocate memory for selected transactions", thread_id);
+                log_info("Thread %d: Falha ao alocar memória para as transações selecionadas", thread_id);
                 pthread_exit(NULL);
             }
 
@@ -304,7 +318,7 @@ void *miner_thread(void *arg)
             ssize_t written = write(validation_pipe_fd, buffer, total_size);
             if ((size_t)written != total_size)
             {
-                log_info("Thread %d: Erro ao escrever no pipe de validação", thread_id);
+                log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
                 sleep(10);
             }
 
@@ -360,43 +374,48 @@ void miner()
     validation_pipe_fd = open(VALIDATION_PIPE, O_WRONLY);
     if (validation_pipe_fd < 0)
     {
-        perror("\nMINER : Erro ao abrir o pipe de validação");
+        log_info("Erro ao abrir o pipe de validação");
         exit(EXIT_FAILURE);
     }
+    log_info("Pipe %s aberto com sucesso.", VALIDATION_PIPE);
 
     // abrir a memoria partilhada para a transactions pool (já existente)
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
     if (shm_transactionspool_fd == -1)
     {
-        perror("\nMINER : Erro ao abrir memória partilhada para transactions pool");
+        log_info("Erro ao abrir memória partilhada para transactions pool");
         exit(EXIT_FAILURE);
     }
+    log_info("%s aberta com sucesso", SHM_TRANSACTIONS_POOL);
 
     // mapear a memoria partilhada para o espaço de memória do processo
     shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
     if (shm_transactionspool_base == MAP_FAILED)
     {
-        perror("\nMINER : Erro ao mapear memória partilhada para transactions pool");
+        log_info("Erro ao mapear memória partilhada para transactions pool");
         close(shm_transactionspool_fd);
         exit(EXIT_FAILURE);
     }
+    log_info("%s mapeada com sucesso", SHM_TRANSACTIONS_POOL);
 
     // abrir a memoria partilhada para a ledger (já existente)
     shm_ledger_fd = shm_open(SHM_LEDGER, O_RDWR, 0666);
     if (shm_ledger_fd == -1)
     {
-        perror("\nMINER : Erro ao abrir memória partilhada para ledger");
+        log_info("MINER : Erro ao abrir memória partilhada para ledger");
         exit(EXIT_FAILURE);
     }
+    log_info("%s aberta com sucesso", SHM_LEDGER);
 
     // mapear a memoria partilhada para o espaço de memória do processo
     shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
     if (shm_ledger_base == MAP_FAILED)
     {
-        perror("\nMINER : Erro ao mapear memória partilhada para transactions pool");
+        log_info("MINER : Erro ao mapear memória partilhada para transactions pool");
         close(shm_ledger_fd);
         exit(EXIT_FAILURE);
     }
+    log_info("%s mapeada com sucesso", SHM_LEDGER);
 
     //////////////////////////////////////
 
@@ -418,15 +437,21 @@ void miner()
     sigaddset(&set, SIGTERM);
     pthread_sigmask(SIG_BLOCK, &set, NULL);
 
+    pthread_t threads[NUM_MINERS];
+
+    SignalHandlerArgs signal_args = {
+        .set = &set,
+        .threads = threads};
+
     // criar a thread para tratamento de sinais
     pthread_t signal_thread;
-    if (pthread_create(&signal_thread, NULL, signal_handler_thread, &set) != 0)
+    if (pthread_create(&signal_thread, NULL, signal_handler_thread, &signal_args) != 0)
     {
-        perror("MINER : Erro ao criar thread de tratamento de sinais");
+        log_info("Erro ao criar thread de tratamento de sinais");
         return;
     }
+    log_info("Thread de tratamento de sinais criada com sucesso.");
 
-    pthread_t threads[NUM_MINERS];
     MinerThreadArgs thread_args[NUM_MINERS];
 
     for (int i = 0; i < NUM_MINERS; i++)

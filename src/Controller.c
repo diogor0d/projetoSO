@@ -162,7 +162,7 @@ static void cleanup()
     log_info("A libertar recursos...");
 
     // Terminate child processes
-    log_info("A terminar processos filhos...");
+    log_info("A sinalizar processos filhos...");
     for (int i = 0; i < NUM_CHILDREN; i++)
     {
         if (pids[i] > 0) // Ensure the PID is valid
