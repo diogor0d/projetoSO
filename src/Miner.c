@@ -99,20 +99,44 @@ static void log_info(const char *format, ...)
 
 static void cleanup()
 {
+
     freeLedger(&ledgerInterface);
 
-    if (close(shm_transactionspool_fd) == -1)
+    if (shm_transactionspool_fd != -1)
     {
-        log_info("Erro ao fechar SHM_TRANSACTIONS_POOL");
-    }
-    if (close(shm_ledger_fd) == -1)
-    {
-        log_info("Erro ao fechar SHM_LEDGER");
+        if (close(shm_transactionspool_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("%s fechada com sucesso", SHM_TRANSACTIONS_POOL);
+        }
     }
 
-    if (close(validation_pipe_fd) == -1)
+    if (shm_ledger_fd != -1)
     {
-        log_info("Erro ao fechar o pipe de validação");
+        if (close(shm_ledger_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_LEDGER);
+        }
+        else
+        {
+            log_info("%s fechada com sucesso", SHM_LEDGER);
+        }
+    }
+
+    if (validation_pipe_fd != -1)
+    {
+
+        if (close(validation_pipe_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", VALIDATION_PIPE);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", VALIDATION_PIPE);
+        }
     }
 
     // Close the log file
@@ -122,7 +146,17 @@ static void cleanup()
     }
 
     // fechar o semaforo para logs
-    sem_close(sem_log_file);
+    if (sem_log_file != NULL)
+    {
+        if (sem_close(sem_log_file) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_LOG_FILE);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_LOG_FILE);
+        }
+    }
 }
 
 void *signal_handler_thread(void *arg)
@@ -154,17 +188,18 @@ void *miner_thread(void *arg)
 
     int block_number = 0;
 
-    while (!stop_threads)
+    while (!stop_threads) // pthread cancel
     {
 
         // log_info("Transacoes na pool: %d", *tx_pool.count);
-        //  printf("\nMiner thread %d: Criando bloco %d...", thread_id, block_number);
+
         //   Create a temporary array to sort transactions
 
         // Copy transactions from the pool to the temporary array
 
         // FALTA SINCRONIZACAO
 
+        // colocar semaforo
         if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
 
@@ -182,14 +217,6 @@ void *miner_thread(void *arg)
                 pthread_exit(NULL);
             }
 
-            // Use a bitmap to track selected transactions
-            bool *selected_bitmap = (bool *)calloc(*tx_pool.count, sizeof(bool));
-            if (selected_bitmap == NULL)
-            {
-                log_info("Thread %d: Failed to allocate memory for selected bitmap", thread_id);
-                pthread_exit(NULL);
-            }
-
             int selected_count = 0;
             unsigned int pool_index = 0;
 
@@ -198,27 +225,16 @@ void *miner_thread(void *arg)
             {
                 unsigned int random_index = rand() % *tx_pool.count; // Generate a random index
 
-                // Check if the transaction has already been selected
-                /*  if (selected_bitmap[random_index])
-                 {
-                     if
-                     continue; // Skip already selected transactions
-                 } */
-
                 PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
 
                 // Check if the transaction has a valid ID
                 if (current_transaction->tx.tx_id != 0)
                 {
                     selected_transactions[selected_count++] = current_transaction->tx;
-                    selected_bitmap[random_index] = true; // Mark the transaction as selected
                 }
 
                 pool_index++; // Move to the next transaction in the pool
             }
-
-            // Free the bitmap after use
-            free(selected_bitmap);
 
             // Create a block
             TransactionBlock block;
@@ -284,6 +300,7 @@ void *miner_thread(void *arg)
             // signal(SIGPIPE, SIG_IGN);
 
             // Write to pipe
+            printf("Thread %d: Enviando bloco %s para o pipe de validação\n", thread_id, block.txb_id);
             ssize_t written = write(validation_pipe_fd, buffer, total_size);
             if ((size_t)written != total_size)
             {
@@ -373,7 +390,6 @@ void miner()
     }
 
     // mapear a memoria partilhada para o espaço de memória do processo
-    log_info("Tamanho da ledger: %d", shm_ledger_size);
     shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
     if (shm_ledger_base == MAP_FAILED)
     {

@@ -33,7 +33,6 @@ int shm_ledger_size;
 
 static sem_t *sem_tx_pool = NULL;
 static sem_t *sem_ledger = NULL;
-static sem_t *sem_pipe_validators = NULL;
 int NUM_MINERS;
 
 LedgerInterface ledgerInterface;
@@ -94,41 +93,75 @@ static void log_info(const char *format, ...)
 
 void cleanup()
 {
-    if (close(shm_transactionspool_fd) == -1)
+    if (shm_transactionspool_fd != -1)
     {
-        log_info("Erro ao fechar SHM_TRANSACTIONS_POOL");
+        if (close(shm_transactionspool_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("%s fechada com sucesso", SHM_TRANSACTIONS_POOL);
+        }
     }
-    if (close(shm_ledger_fd) == -1)
+    if (shm_ledger_fd != -1)
     {
-        log_info("Erro ao fechar SHM_LEDGER");
+        if (close(shm_ledger_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_LEDGER);
+        }
+        else
+        {
+            log_info("%s fechada com sucesso", SHM_LEDGER);
+        }
     }
 
-    if (close(validation_pipe_fd) == -1)
+    if (validation_pipe_fd != -1)
     {
-        log_info("Erro ao fechar o pipe de validação");
+        if (close(validation_pipe_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", VALIDATION_PIPE);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", VALIDATION_PIPE);
+        }
     }
 
     if (ledgerInterface.blocks)
     {
         free(ledgerInterface.blocks);
+        log_info("Interface da ledger libertada com sucesso");
+    }
+    else
+    {
+        log_info("Erro ao libertar a interface da ledger");
     }
 
     // Fechar o semáforo
-    if (sem_close(sem_tx_pool) == -1)
+    if (sem_tx_pool != NULL)
     {
-        perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+        if (sem_close(sem_tx_pool) == -1)
+        {
+            log_info("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL");
+        }
+        else
+        {
+            log_info("sem_tx_pool fechado com sucesso");
+        }
     }
 
     // ledger
-    if (sem_close(sem_ledger) == -1)
+    if (sem_ledger != NULL)
     {
-        log_info("Erro ao fechar semáforo SEM_LEDGER");
-    }
-
-    // ledger
-    if (sem_close(sem_pipe_validators) == -1)
-    {
-        log_info("Erro ao fechar semáforo SEM_PIPE_VALIDATORS");
+        if (sem_close(sem_ledger) == -1)
+        {
+            log_info("Erro ao fechar semáforo SEM_LEDGER");
+        }
+        else
+        {
+            log_info("sem_ledger fechado com sucesso");
+        }
     }
 
     // Close the log file
@@ -138,14 +171,24 @@ void cleanup()
     }
 
     // fechar o semaforo para logs
-    sem_close(sem_log_file);
+    if (sem_log_file != NULL)
+    {
+        if (sem_close(sem_log_file) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_LOG_FILE);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_LOG_FILE);
+        }
+    }
 }
 
 static void sigterm(int signum)
 {
     (void)signum; // Ignore the signal parameter
 
-    log_info("SIGTERM recebido. A terminar o validator...");
+    log_info("SIGTERM recebido. A terminar execução...");
 
     cleanup(); // Call the cleanup function to close the log file and semaphores
 
@@ -173,7 +216,7 @@ int txCompare(const Transaction *tx1, const Transaction *tx2)
     return 0; // Transactions are not equal
 }
 
-void validator()
+void validator(int num)
 {
 
     // Abrir o semaforo para logs (já existente)
@@ -190,15 +233,9 @@ void validator()
         perror("\nVALIDATOR : Erro ao abrir o ficheiro de log");
         return;
     }
-    TIPO_PROCESSO = "VALIDATOR";
-
-    // semaforo leituras pipe
-    sem_pipe_validators = sem_open(SEM_PIPE_VALIDATORS, 0);
-    if (sem_pipe_validators == SEM_FAILED)
-    {
-        log_info("Erro ao abrir semáforo para PIPE VALIDATORS");
-        return;
-    }
+    char buffer[20];
+    snprintf(buffer, sizeof(buffer), "VALIDATOR %d", num);
+    TIPO_PROCESSO = strdup(buffer);
 
     // abrir a memoria partilhada para a transactions pool (já existente)
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
@@ -268,6 +305,7 @@ void validator()
     // print_ledger(&ledgerInterface); // Print the ledger
 
     sem_wait(sem_ledger); // bloquear o semáforo para o ledger
+
     if (*(ledgerInterface.count) == 0)
     {
         TransactionBlock nemesis_block;
@@ -297,14 +335,13 @@ void validator()
         // memcpy(ledgerInterface.blocks[0].transactions, nemesis_block.transactions, TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
 
         strcpy(ledgerInterface.last_block_hash, r.hash);
-        sem_post(sem_ledger); // desbloquear o semáforo para o ledger
+        // sem_post(sem_ledger); // desbloquear o semáforo para o ledger
 
         free(nemesis_block.transactions); // Free the allocated memory for transactions
+        log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
     }
 
     // print_ledger(&ledgerInterface); // Print the ledger
-
-    log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
 
     while (1)
     {
@@ -312,32 +349,28 @@ void validator()
         TransactionBlock streamed_block;
 
         size_t payload_size;
-        sem_wait(sem_pipe_validators); // bloquear o semáforo para o pipe de validação
+
         ssize_t read_bytes = read(validation_pipe_fd, &payload_size, sizeof(size_t));
         if (read_bytes == 0)
         {
             // EOF — other side closed pipe
-            sem_post(sem_pipe_validators); // desbloquear o semáforo para o pipe de validação
             printf("Pipe closed. Exiting.\n");
             break;
         }
         else if (read_bytes != sizeof(size_t))
         {
             perror("read (size)");
-            sem_post(sem_pipe_validators); // desbloquear o semáforo para o pipe de validação
             break;
         }
 
         char *buffer = malloc(payload_size);
         if (!buffer)
         {
-            sem_post(sem_pipe_validators); // desbloquear o semáforo para o pipe de validação
             perror("malloc");
             break;
         }
 
         read_bytes = read(validation_pipe_fd, buffer, payload_size);
-        sem_post(sem_pipe_validators); // desbloquear o semáforo para o pipe de validação
         if ((size_t)read_bytes != payload_size)
         {
             perror("read (block)");
@@ -360,7 +393,7 @@ void validator()
 
         log_info("Bloco recebido: %s\n", streamed_block.txb_id);
 
-        sem_wait(sem_ledger); // bloquear o semáforo para o ledger
+        // sem_wait(sem_ledger); // bloquear o semáforo para o ledger
         if (!(*(ledgerInterface.count) < *(ledgerInterface.num_blocks)))
         {
             log_info("Ledger cheia. A aguardar...\n");
@@ -392,6 +425,7 @@ void validator()
         if (sem_wait(sem_tx_pool) == -1)
         {
             perror("Erro ao bloquear o semáforo");
+            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
             break;
         }
         int skip_block = 0; // Flag to indicate whether to skip the block

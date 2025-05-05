@@ -34,7 +34,7 @@ int BLOCK_BUFFER_SIZE = 2048;
 
 // Definições de semáforos e memória partilhada para acesso global
 
-static sem_t *sem_transactions_pool, *sem_ledger, *sem_pipe_validators;
+static sem_t *sem_transactions_pool, *sem_ledger;
 static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
 static int shm_transactionspool_fd, shm_ledger_fd;
@@ -101,7 +101,7 @@ static void log_info(const char *format, ...)
     // Escrever a mensagem de log no ficheiro e no stdout
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
     fflush(stdout);
 
     // desbloquear o semáforo
@@ -162,6 +162,7 @@ static void cleanup()
     log_info("A libertar recursos...");
 
     // Terminate child processes
+    log_info("A terminar processos filhos...");
     for (int i = 0; i < NUM_CHILDREN; i++)
     {
         if (pids[i] > 0) // Ensure the PID is valid
@@ -175,6 +176,7 @@ static void cleanup()
     }
 
     // Wait for child processes to exit
+    log_info("A aguardar pelo fim dos processos filhos...");
     for (int i = 0; i < NUM_CHILDREN; i++)
     {
         if (pids[i] > 0) // Ensure the PID is valid
@@ -192,80 +194,145 @@ static void cleanup()
     }
 
     // Unmap and close shared memory for transaction pool
-    if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
+    if (shm_transactionspool_base != NULL)
     {
+        if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
+        {
+            log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
+        }
     }
-    if (close(shm_transactionspool_fd) == -1)
+    if (shm_transactionspool_fd != -1)
     {
+        if (close(shm_transactionspool_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("Fechado %s com sucesso", SHM_TRANSACTIONS_POOL);
+        }
     }
     if (shm_unlink(SHM_TRANSACTIONS_POOL) == -1)
     {
-        log_info("Erro ao desvincular SHM_TRANSACTIONSPOOL");
+        log_info("Erro ao terminar %s", SHM_TRANSACTIONS_POOL);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", SHM_TRANSACTIONS_POOL);
     }
 
     // Unmap and close shared memory for ledger
-    if (munmap(shm_ledger_base, shm_ledger_size) == -1)
+    if (shm_ledger_base != NULL)
     {
-    }
-    if (close(shm_ledger_fd) == -1)
-    {
+        if (munmap(shm_ledger_base, shm_ledger_size) == -1)
+        {
+            log_info("Erro ao desmapear %s", SHM_LEDGER);
+        }
+        else
+        {
+            log_info("Desmapeado %s com sucesso", SHM_LEDGER);
+        }
     }
     if (shm_unlink(SHM_LEDGER) == -1)
     {
-        log_info("Erro ao desvincular SHM_LEDGER");
+        log_info("Erro ao terminar %s", SHM_LEDGER);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", SHM_LEDGER);
+    }
+
+    // Unmap transactions pool shared memory
+    if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
+    {
+        log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
+    }
+    else
+    {
+        log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
     }
 
     // Close semaphores
     // transactions pool
-    if (sem_close(sem_transactions_pool) == -1)
+    if (sem_transactions_pool != NULL)
     {
-        log_info("Erro ao fechar semáforo SEM_TRANSACTIONS_POOL");
+        if (sem_close(sem_transactions_pool) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_TRANSACTIONS_POOL);
+        }
     }
 
     // ledger
-    if (sem_close(sem_ledger) == -1)
+    if (sem_ledger != NULL)
     {
-        log_info("Erro ao fechar semáforo SEM_LEDGER");
-    }
-
-    // pipe validators
-    if (sem_close(sem_pipe_validators) == -1)
-    {
-        log_info("Erro ao fechar semáforo SEM_PIPE_VALIDATORS");
-    }
-
-    // log file
-    if (sem_close(sem_log_file) == -1)
-    {
-        perror("Erro ao fechar semáforo SEM_LOG_FILE");
+        if (sem_close(sem_ledger) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_LEDGER);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_LEDGER);
+        }
     }
 
     // Unlink semaphores
     // transactions pool
     if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
     {
-        log_info("Erro ao desvincular semáforo SEM_TRANSACTIONS_POOL");
+        log_info("Erro ao terminar semáforo %s", SEM_TRANSACTIONS_POOL);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", SEM_TRANSACTIONS_POOL);
     }
     // ledger
     if (sem_unlink(SEM_LEDGER) == -1)
     {
-        log_info("Erro ao desvincular semáforo SEM_LEDGER");
+        log_info("Erro ao terminar semáforo %s", SEM_LEDGER);
     }
-    // ledger
-    if (sem_unlink(SEM_PIPE_VALIDATORS) == -1)
+    else
     {
-        log_info("Erro ao desvincular semáforo SEM_PIPE_VALIDATORS");
-    }
-    // log file
-    if (sem_unlink(SEM_LOG_FILE) == -1)
-    {
-        perror("Erro ao desvincular semáforo SEM_LOG_FILE");
+        log_info("%s terminado com sucesso", SEM_LEDGER);
     }
 
     // Fechar o pipe
     if (unlink(VALIDATION_PIPE) == -1)
     {
-        log_info("Erro ao desvincular o pipe de validação");
+        log_info("Erro ao terminar o pipe %s", VALIDATION_PIPE);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", VALIDATION_PIPE);
+    }
+
+    // log file
+    if (sem_log_file != NULL)
+    {
+        if (sem_close(sem_log_file) == -1)
+        {
+            printf("\nController:Erro ao fechar semáforo %s\n", SEM_LOG_FILE);
+        }
+        else
+        {
+            printf("\nController:%s fechado com sucesso\n", SEM_LOG_FILE);
+        }
+    }
+    // log file
+    if (sem_unlink(SEM_LOG_FILE) == -1)
+    {
+        printf("\nController: Erro ao terminar semáforo %s\n", SEM_LOG_FILE);
+    }
+    else
+    {
+        printf("\nController: %s terminado com sucesso\n", SEM_LOG_FILE);
     }
 
     // Close the log file
@@ -283,19 +350,21 @@ void sigint(int signum)
     exit(EXIT_SUCCESS);
 }
 
-void sigterm(int signum)
-{
-    (void)signum; // ignorar o sinal, não é necessário para o tratamento
-    log_info("SIGTERM recebido... Paragem de execução em curso...");
-    cleanup();
-    exit(EXIT_SUCCESS);
-}
-
 int main()
 {
-    // ignorar sinais de interrupção e paragem até ser segura a limpeza dos recursos
-    signal(SIGINT, SIG_IGN);
-    signal(SIGTERM, SIG_IGN);
+    for (int i = 1; i < NSIG; i++) // NSIG is the total number of signals
+    {
+        // Ignorar sinais que não podem ser tratados ou que não podem ser ignorados
+        if (i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
+        {
+            continue;
+        }
+
+        if (signal(i, SIG_IGN) == SIG_ERR)
+        {
+            fprintf(stderr, "Falha ao ignorar o sinal %d\n", i);
+        }
+    }
 
     // Ler e processar o ficheiro de configuração
     parse_config();
@@ -336,6 +405,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("Semáforo %s criado com sucesso", SEM_TRANSACTIONS_POOL);
 
     // semaforo ledger
     sem_ledger = sem_open(SEM_LEDGER, O_CREAT, 0666, 1);
@@ -345,15 +415,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
-
-    // semaforo pipe_validators
-    sem_pipe_validators = sem_open(SEM_PIPE_VALIDATORS, O_CREAT, 0666, 1);
-    if (sem_pipe_validators == SEM_FAILED)
-    {
-        log_info("Erro ao criar semáforo para PIPE VALIDATORS");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
+    log_info("Semáforo %s criado com sucesso", SEM_LEDGER);
 
     // shared memory transactions pool
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
@@ -363,6 +425,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s criada com sucesso", SHM_TRANSACTIONS_POOL);
     shm_transactionspool_size = sizeof(TransactionPoolSHM) + (TRANSACTION_POOL_SIZE * sizeof(PendingTransaction));
     if (ftruncate(shm_transactionspool_fd, shm_transactionspool_size) == -1)
     {
@@ -370,6 +433,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s redimensionada com sucesso para %d bytes", SHM_TRANSACTIONS_POOL, shm_transactionspool_size);
     // mapear a memoria partilhada
     shm_transactionspool_base = mmap(NULL, shm_transactionspool_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_transactionspool_fd, 0);
     if (shm_transactionspool_base == MAP_FAILED)
@@ -378,19 +442,11 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s mapeada com sucesso", SHM_TRANSACTIONS_POOL);
     memset(shm_transactionspool_base, 0, shm_transactionspool_size);                                     // Inicializar a memória partilhada para a transactions pool
     ((TransactionPoolSHM *)shm_transactionspool_base)->size = TRANSACTION_POOL_SIZE;                     // Definir o tamanho da transactions pool
     ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_offset = sizeof(TransactionPoolSHM); // Inicializar o contador de transações
-
-    // desmapear a memoria partilhada do processo atual (já que não é necessário)
-    if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
-    {
-        log_info("Erro ao desmapear SHM_TRANSACTIONSPOOL");
-    }
-    if (close(shm_transactionspool_fd) == -1)
-    {
-        log_info("Erro ao fechar SHM_TRANSACTIONSPOOL");
-    }
+    log_info("Memória partilhada para a transactions pool inicializada com sucesso");
 
     // Criar o segmento de memoria partilhada para LEDGER
     shm_ledger_fd = shm_open(SHM_LEDGER, O_CREAT | O_RDWR, 0666);
@@ -400,6 +456,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s criada com sucesso", SHM_LEDGER);
     shm_ledger_size = sizeof(LedgerSHM) + BLOCKCHAIN_BLOCKS * sizeof(TransactionBlockSHM) + BLOCKCHAIN_BLOCKS * TRANSACTIONS_PER_BLOCK * sizeof(Transaction);
     if (ftruncate(shm_ledger_fd, shm_ledger_size) == -1)
     {
@@ -407,6 +464,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s redimensionada com sucesso para %d bytes", SHM_LEDGER, shm_ledger_size);
     // mapear a memoria partilhada
     shm_ledger_base = mmap(NULL, shm_ledger_size, PROT_READ | PROT_WRITE, MAP_SHARED, shm_ledger_fd, 0);
     if (shm_ledger_base == MAP_FAILED)
@@ -415,18 +473,28 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("%s mapeada com sucesso", SHM_LEDGER);
     memset(shm_ledger_base, 0, shm_ledger_size);                       // Inicializar a memória partilhada para o ledger
     ((LedgerSHM *)shm_ledger_base)->num_blocks = BLOCKCHAIN_BLOCKS;    // Inicializar o número de blocos no ledger
     ((LedgerSHM *)shm_ledger_base)->blocks_offset = sizeof(LedgerSHM); // Inicializar o offset para as transações
+    log_info("Memória partilhada para o ledger inicializada com sucesso");
 
     //  desmapear a memoria partilhada do processo atual (já que não é necessário)
     if (munmap(shm_ledger_base, shm_ledger_size) == -1)
     {
         log_info("Erro ao desmapear SHM_LEDGER");
     }
+    else
+    {
+        log_info("Desmapeado %s com sucesso", SHM_LEDGER);
+    }
     if (close(shm_ledger_fd) == -1)
     {
         log_info("Erro ao fechar SHM_LEDGER");
+    }
+    else
+    {
+        log_info("Fechado %s com sucesso", SHM_LEDGER);
     }
 
     // Criar pipe para comunição entre validator e miner
@@ -435,6 +503,10 @@ int main()
         log_info("Falha ao criar o pipe %s: %s", VALIDATION_PIPE, strerror(errno));
         cleanup();
         exit(EXIT_FAILURE);
+    }
+    else
+    {
+        log_info("Pipe %s criado com sucesso", VALIDATION_PIPE);
     }
 
     // Iniciar os processos dos varios componentes
@@ -468,7 +540,7 @@ int main()
     else if (pids[1] == 0)
     {
         log_info("Validator iniciado com PID %d", getpid());
-        validator();
+        validator(1);
         exit(EXIT_SUCCESS);
     }
 
@@ -489,7 +561,6 @@ int main()
 
     // Voltar a tratar os sinais de interrupção e paragem
     signal(SIGINT, sigint);
-    signal(SIGTERM, sigterm);
 
     // Controlador aguarda pelo término de todos os processos filhos
     for (int i = 0; i < 3; i++)
