@@ -20,6 +20,7 @@
 int tx_number = 0;                  // incremental value for transaction id
 int shm_fd = 0;                     // file descriptor para a shared memory
 sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
+sem_t *sem_enough_tx_pool = NULL;   // semáforo para a transactions pool
 void *shm_base = NULL;              // ponteiro para a memória partilhada
 size_t shm_size = 0;                // tamanho da memória partilhada
 TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
@@ -37,6 +38,11 @@ void cleanup()
     if (sem_close(sem_tx_pool) == -1)
     {
         perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+    }
+
+    if (sem_close(sem_enough_tx_pool) == -1)
+    {
+        perror("Erro ao fechar o semáforo SEM_ENOUGH_TX_POOL\n");
     }
     // Unmap e fecho da shared memory
     if (munmap(tx_pool, shm_size) == -1)
@@ -122,11 +128,22 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
+    printf("A iniciar o txGen...\n");
+
     // Abrir o semáforo para a transactions pool
     sem_tx_pool = sem_open(SEM_TRANSACTIONS_POOL, 0);
     if (sem_tx_pool == SEM_FAILED)
     {
         perror("Erro ao abrir semáforo SEM_TRANSACTIONS_POOL\n");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+
+    // Abrir o semáforo sem_enough_tx_pool
+    sem_enough_tx_pool = sem_open(SEM_ENOUGH_TX_POOL, 0);
+    if (sem_enough_tx_pool == SEM_FAILED)
+    {
+        perror("Erro ao abrir semáforo SEM_ENOUGH_TX_POOL\n");
         cleanup();
         exit(EXIT_FAILURE);
     }
@@ -156,6 +173,10 @@ int main(int argc, char *argv[])
     tx_pool = (TransactionPoolSHM *)shm_base;
     unsigned int pool_size = tx_pool->size;
     printf("Leitura do tamanho da pool efetuado...\n");
+    unsigned int num_miners = tx_pool->num_miners;
+    unsigned int transactions_per_block = tx_pool->transactions_per_block;
+    printf("Número de miners: %d\n", num_miners);
+    printf("Transações por bloco: %d\n", transactions_per_block);
 
     printf("Tamanho da transactions pool: %d\n", pool_size);
 
@@ -188,14 +209,41 @@ int main(int argc, char *argv[])
     // O facto das transações estarem na shared memory impede o uso direto de ponteiros, que apenas dizem respeito ao espaço de endereçamento do processo atual. Portanto, é necessário recorrer a offsets para manipular o acesso aos dados em cada processo que acede à shared memory. Para isso, utiliza-se uma interface local de acesso à transactions pool que aponta para os dados na memoria mapeada para a shared memory.
     TransactionPoolInterface tx_pool_interface = interfaceTxPool(shm_base);
 
+    printf("A iniciar a geração de transações...\n");
     while (1)
     {
-        printf("Semaforo bloqueado...\n");
         // Bloquear o semáforo antes de escrever na pool
         if (sem_wait(sem_tx_pool) == -1)
         {
             perror("Erro ao bloquear o semáforo");
             break;
+        }
+
+        // verificar se ha transacoes suficientes para construir um bloco
+        if (*tx_pool_interface.count >= transactions_per_block)
+        {
+            // desbloquear o semáforo para permitir que o miner possa aceder à pool
+            for (unsigned int i = 0; i < num_miners; i++)
+            {
+                if (sem_post(sem_enough_tx_pool) == -1)
+                {
+                    perror("Erro ao desbloquear o semáforo");
+                    return -1; // Return an error if sem_post fails
+                }
+            }
+            printf("Transações suficientes para construir um bloco. Acordando os miners...\n");
+        }
+        else
+        {
+        }
+        int sem_value;
+        if (sem_getvalue(sem_enough_tx_pool, &sem_value) == -1)
+        {
+            perror("Erro ao obter o valor do semáforo SEM_ENOUGH_TX_POOL");
+        }
+        else
+        {
+            printf("SEM VALUE: %d\n", sem_value); // Debugging line to check semaphore value
         }
 
         if (*tx_pool_interface.count < *tx_pool_interface.size)
@@ -226,7 +274,6 @@ int main(int argc, char *argv[])
             perror("Erro ao desbloquear o semáforo");
             break;
         }
-        printf("Semaforo desbloqueado...\n");
 
         usleep(sleep_time * 1000);
     }

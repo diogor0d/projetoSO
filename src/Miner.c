@@ -26,6 +26,9 @@ static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
 static char *TIPO_PROCESSO = NULL;
 
+static sem_t *sem_transactionspool = NULL;
+static sem_t *sem_enough_tx_pool = NULL;
+
 // aceder a variavel globais do controller
 int NUM_MINERS;
 int LEDGER_SIZE;
@@ -145,6 +148,30 @@ static void cleanup()
         }
     }
 
+    if (sem_transactionspool != NULL)
+    {
+        if (sem_close(sem_transactionspool) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_TRANSACTIONS_POOL);
+        }
+    }
+
+    if (sem_enough_tx_pool != NULL)
+    {
+        if (sem_close(sem_enough_tx_pool) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_ENOUGH_TX_POOL);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_ENOUGH_TX_POOL);
+        }
+    }
+
     // Close the log file
     if (log_file)
     {
@@ -183,6 +210,7 @@ void *signal_handler_thread(void *arg)
             // terminar todas as miner threads
             for (int i = 0; i < NUM_MINERS; i++)
             {
+                log_info("A terminar a thread %d...", i);
                 pthread_cancel(threads[i]); // Send cancellation request
             }
         }
@@ -205,6 +233,8 @@ void *miner_thread(void *arg)
     while (1) // pthread cancel
     {
 
+        pthread_testcancel(); // Check for cancellation reques
+
         // log_info("Transacoes na pool: %d", *tx_pool.count);
 
         //   Create a temporary array to sort transactions
@@ -214,7 +244,11 @@ void *miner_thread(void *arg)
         // FALTA SINCRONIZACAO
 
         // colocar semaforo
-        if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
+
+        printf("\nEsperar por transacoes na transactions pool\n");
+        sem_wait(sem_enough_tx_pool); // esperar que hajam transacoes suficientes na pool
+        sem_wait(sem_transactionspool);
+        if (*(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
 
             // incrementar o número do bloco
@@ -228,27 +262,59 @@ void *miner_thread(void *arg)
             if (selected_transactions == NULL)
             {
                 log_info("Thread %d: Falha ao alocar memória para as transações selecionadas", thread_id);
+                sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
                 pthread_exit(NULL);
             }
 
             int selected_count = 0;
-            unsigned int pool_index = 0;
+
+            bool *selected_bitmap = (bool *)calloc(*tx_pool.size, sizeof(bool));
+            if (selected_bitmap == NULL)
+            {
+                log_info("Thread %d: Falha ao alocar memória para o bitmap de transações selecionadas", thread_id);
+                sem_post(sem_transactionspool); // Unlock the semaphore
+                pthread_exit(NULL);
+            }
+
+            if (*tx_pool.count < TRANSACTIONS_PER_BLOCK)
+            {
+                log_info("Thread %d: Transações insuficientes na pool. Aguardando...", thread_id);
+                sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+                continue;                       // Skip to the next iteration if not enough transactions
+            }
 
             // Use a while loop to select transactions
-            while (selected_count < (int)TRANSACTIONS_PER_BLOCK && pool_index < *tx_pool.count)
+            while (selected_count < (int)TRANSACTIONS_PER_BLOCK && *tx_pool.count >= TRANSACTIONS_PER_BLOCK)
             {
-                unsigned int random_index = rand() % *tx_pool.count; // Generate a random index
+                unsigned int random_index = rand() % *tx_pool.size; // Generate a random index
+
+                // Check if the transaction at this index has already been selected
+                if (selected_bitmap[random_index])
+                {
+                    continue; // Skip this transaction if it has already been selected
+                }
 
                 PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
 
-                // Check if the transaction has a valid ID
-                if (current_transaction->tx.tx_id != 0)
+                // Check if the transaction is valid (filled and has a valid ID)
+                if (strcmp(current_transaction->tx.tx_id, "0") != 0 && current_transaction->filled == 1)
                 {
-                    selected_transactions[selected_count++] = current_transaction->tx;
-                }
+                    // Mark the transaction as selected in the bitmap
+                    selected_bitmap[random_index] = true;
 
-                pool_index++; // Move to the next transaction in the pool
+                    // Add the transaction to the selected transactions array
+                    selected_transactions[selected_count].reward = current_transaction->tx.reward;
+                    selected_transactions[selected_count].value = current_transaction->tx.value;
+                    selected_transactions[selected_count].timestamp = current_transaction->tx.timestamp;
+                    strncpy(selected_transactions[selected_count].tx_id, current_transaction->tx.tx_id, TX_ID_LEN);
+                    selected_count++;
+                }
             }
+
+            // Free the bitmap after use
+            free(selected_bitmap);
+
+            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
 
             // Create a block
             TransactionBlock block;
@@ -319,7 +385,6 @@ void *miner_thread(void *arg)
             if ((size_t)written != total_size)
             {
                 log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
-                sleep(10);
             }
 
             free(buffer);
@@ -334,17 +399,12 @@ void *miner_thread(void *arg)
         else if (*ledgerInterface.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
             log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
-            break; // Exit the loop when the ledger is full
+            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+            break;                          // Exit the loop when the ledger is full
         }
         else
         {
-            // debug condicao
-            // log_info("Debug: tx_pool.count = %d, TRANSACTIONS_PER_BLOCK = %zu, ledgerInterface.count = %d, BLOCKCHAIN_BLOCKS = %d", *tx_pool.count, TRANSACTIONS_PER_BLOCK, *ledgerInterface.count, BLOCKCHAIN_BLOCKS);
-
-            // print_ledger(&ledgerInterface); // Print the ledger")
-            // log_info("Thread %d: Não há transações suficientes para construir um novo bloco", thread_id);
-            // print_transaction_pool(&tx_pool); // Print the transaction pool
-            sleep(1); // Sleep for a while before checking again
+            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
         }
     }
 
@@ -369,6 +429,22 @@ void miner()
         return;
     }
     TIPO_PROCESSO = "MINER";
+
+    // Abrir o semaforo para transactions pool
+    sem_transactionspool = sem_open(SEM_TRANSACTIONS_POOL, 0);
+    if (sem_transactionspool == SEM_FAILED)
+    {
+        log_info("\Erro ao abrir semáforo %s", SEM_TRANSACTIONS_POOL);
+        return;
+    }
+
+    // abrir semaforo para acordar as threads miner
+    sem_enough_tx_pool = sem_open(SEM_ENOUGH_TX_POOL, 0);
+    if (sem_enough_tx_pool == SEM_FAILED)
+    {
+        log_info("Erro ao abrir semáforo %s", SEM_ENOUGH_TX_POOL);
+        return;
+    }
 
     // abrir o pipe no processo atual para acesso por todas as threads
     validation_pipe_fd = open(VALIDATION_PIPE, O_WRONLY);

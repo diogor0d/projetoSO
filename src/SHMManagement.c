@@ -142,6 +142,10 @@ void print_ledger(const LedgerInterface *ledger)
     for (unsigned int i = 0; i < *ledger->num_blocks; i++)
     {
         TransactionBlockInterface block = ledger->blocks[i];
+        if (strcmp(block.txb_id, "") == 0)
+        {
+            continue;
+        }
 
         printf("Block %u: ID=%s, Previous Hash=%s, Timestamp=%ld, Nonce=%u\n", i, block.txb_id, block.previous_block_hash, *block.timestamp, *block.nonce);
 
@@ -209,7 +213,7 @@ void print_transaction_pool(TransactionPoolInterface *tx_pool)
     printf("  Size: %u\n", *tx_pool->size);
     printf("  Count: %u\n", *tx_pool->count);
 
-    for (unsigned int i = 0; i < *tx_pool->count; i++)
+    for (unsigned int i = 0; i < *tx_pool->size; i++)
     {
         PendingTransaction *pt = &tx_pool->transactions[i];
         if (pt->filled)

@@ -19,7 +19,7 @@
 #define SEM_TRANSACTIONS_POOL "/sem_transactions_pool"
 #define SEM_LEDGER "/sem_ledger"
 #define SEM_LOG_FILE "/sem_log_file"
-#define SEM_PIPE_VALIDATORS "/sem_pipe_validators"
+#define SEM_ENOUGH_TX_POOL "/sem_enough_tx_pool"
 
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
@@ -52,8 +52,10 @@ typedef struct
 
 typedef struct
 {
-    unsigned int size;          // capacidade da pool
-    unsigned int count;         // número de transações na pool
+    unsigned int size;  // capacidade da pool
+    unsigned int count; // número de transações na pool
+    unsigned int num_miners;
+    unsigned int transactions_per_block;
     size_t transactions_offset; // offset para o início das transações
 } TransactionPoolSHM;
 

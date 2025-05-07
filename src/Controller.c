@@ -34,7 +34,7 @@ int BLOCK_BUFFER_SIZE = 2048;
 
 // Definições de semáforos e memória partilhada para acesso global
 
-static sem_t *sem_transactions_pool, *sem_ledger;
+static sem_t *sem_transactions_pool, *sem_ledger, *sem_enough_tx_pool;
 static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
 static int shm_transactionspool_fd, shm_ledger_fd;
@@ -283,6 +283,19 @@ static void cleanup()
         }
     }
 
+    // enough tx pool
+    if (sem_enough_tx_pool != NULL)
+    {
+        if (sem_close(sem_enough_tx_pool) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_ENOUGH_TX_POOL);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_ENOUGH_TX_POOL);
+        }
+    }
+
     // Unlink semaphores
     // transactions pool
     if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
@@ -301,6 +314,16 @@ static void cleanup()
     else
     {
         log_info("%s terminado com sucesso", SEM_LEDGER);
+    }
+
+    // enough tx pool
+    if (sem_unlink(SEM_ENOUGH_TX_POOL) == -1)
+    {
+        log_info("Erro ao terminar semáforo %s", SEM_ENOUGH_TX_POOL);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", SEM_ENOUGH_TX_POOL);
     }
 
     // Fechar o pipe
@@ -417,6 +440,15 @@ int main()
     }
     log_info("Semáforo %s criado com sucesso", SEM_LEDGER);
 
+    // semaforo para sinalizar aos miners que existem transações suficientes na transactions pool para trabalharem
+    sem_enough_tx_pool = sem_open(SEM_ENOUGH_TX_POOL, O_CREAT, 0666, 0);
+    if (sem_enough_tx_pool == SEM_FAILED)
+    {
+        log_info("Erro ao criar semáforo para ENOUGH_TX_POOL");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+
     // shared memory transactions pool
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
     if (shm_transactionspool_fd == -1)
@@ -444,7 +476,9 @@ int main()
     }
     log_info("%s mapeada com sucesso", SHM_TRANSACTIONS_POOL);
     memset(shm_transactionspool_base, 0, shm_transactionspool_size);                                     // Inicializar a memória partilhada para a transactions pool
-    ((TransactionPoolSHM *)shm_transactionspool_base)->size = TRANSACTION_POOL_SIZE;                     // Definir o tamanho da transactions pool
+    ((TransactionPoolSHM *)shm_transactionspool_base)->size = TRANSACTION_POOL_SIZE;                     // parametros uteis para txgen
+    ((TransactionPoolSHM *)shm_transactionspool_base)->num_miners = NUM_MINERS;                          // parametros uteis para txgen
+    ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_per_block = TRANSACTIONS_PER_BLOCK;  // parametros uteis para txgen
     ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_offset = sizeof(TransactionPoolSHM); // Inicializar o contador de transações
     log_info("Memória partilhada para a transactions pool inicializada com sucesso");
 

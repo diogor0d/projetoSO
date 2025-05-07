@@ -425,7 +425,7 @@ void validator(int num)
             continue;             // avançar para a receção de um proximo bloco
         }
 
-        // print_transaction_pool(&tx_pool); // Print the transaction pool
+        print_transaction_pool(&tx_pool); // Print the transaction pool
 
         // verificar se todas as transacoes do bloco se encontram na transactions pool
         if (sem_wait(sem_tx_pool) == -1)
@@ -486,6 +486,8 @@ void validator(int num)
             continue;             // Skip the rest of the `while (1)` loop iteration
         }
 
+        print_transaction_pool(&tx_pool); // Print the transaction pool
+
         // remover transacoes da transactions pool
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
@@ -505,6 +507,10 @@ void validator(int num)
                 }
             }
         }
+
+        print_transaction_pool(&tx_pool); // Print the transaction pool
+
+        print_ledger(&ledgerInterface); // Print the ledger
 
         // mecanismo de aging
         for (size_t i = 0; i < *(tx_pool.size); i++)
@@ -554,15 +560,6 @@ void validator(int num)
         *(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].nonce) = streamed_block.nonce;
 
         // print_ledger(&ledgerInterface); // Print the ledger
-
-        Transaction *ledger_tx_block_array = ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions;
-
-        ledger_tx_block_array[0].reward = 69;
-        ledger_tx_block_array[1].reward = 69;
-        // print_ledger(&ledgerInterface); // Print the ledger
-
-        print_transaction(&(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[0]));
-        print_transaction(&(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[1]));
 
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
