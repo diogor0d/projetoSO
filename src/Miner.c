@@ -17,7 +17,6 @@
 #include <signal.h>
 #include <openssl/sha.h>
 #include <stdbool.h>
-#include <errno.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -42,10 +41,6 @@ static TransactionPoolInterface tx_pool;
 // definições de variaveis da transactions pool para acesso em todas as threads
 static void *shm_transactionspool_base = NULL;
 static int shm_transactionspool_fd = -1;
-
-static void *shm_minerworkcondvar_base = NULL;
-static int shm_minerworkcondvar_fd = -1;
-static MinerWorKCondVar *minerwork_condvar = NULL;
 
 // definições de variaveis da ledger para acesso em todas as threads
 static void *shm_ledger_base = NULL;
@@ -161,29 +156,6 @@ static void cleanup()
         }
     }
 
-    if (shm_minerworkcondvar_fd != -1)
-    {
-        if (close(shm_minerworkcondvar_fd) == -1)
-        {
-            log_info("Erro ao fechar %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-    if (shm_minerworkcondvar_base != NULL)
-    {
-        if (munmap(shm_minerworkcondvar_base, sizeof(MinerWorKCondVar)) == -1)
-        {
-            log_info("Erro ao desmapear %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("Desmapeado %s com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-
     if (validation_pipe_fd != -1)
     {
 
@@ -258,6 +230,8 @@ void *signal_handler_thread(void *arg)
 
 void *miner_thread(void *arg)
 {
+    pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL);
+
     MinerThreadArgs *args = (MinerThreadArgs *)arg;
     int thread_id = args->thread_id;
 
@@ -270,32 +244,19 @@ void *miner_thread(void *arg)
     while (1) // pthread cancel
     {
 
-        pthread_testcancel(); // Check for cancellation reques
+        // pthread_testcancel(); // Check for cancellation reques
 
         // log_info("Transacoes na pool: %d", *tx_pool.count);
 
         //   Create a temporary array to sort transactions
 
-        pthread_mutex_lock(&minerwork_condvar->mutex);
-
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-        ts.tv_sec += 1; // Wait for 1 second
-
-        int ret = pthread_cond_timedwait(&minerwork_condvar->cond, &minerwork_condvar->mutex, &ts);
-        if (ret == ETIMEDOUT)
-        {
-            pthread_testcancel(); // Check for cancellation request
-        }
-
-        sem_wait(sem_transactionspool);
-
         // apesar da redundancia desta condição, ela é efetuada para garantir a clareza da operação de cada thread
         if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
-            pthread_mutex_unlock(&minerwork_condvar->mutex);
 
             // incrementar o número do bloco
+
+            sem_wait(sem_transactionspool);
 
             // print_transaction_pool(&tx_pool);
 
@@ -317,7 +278,6 @@ void *miner_thread(void *arg)
             {
                 log_info("Thread %d: Falha ao alocar memória para o bitmap de transações selecionadas", thread_id);
                 sem_post(sem_transactionspool); // Unlock the semaphore
-                pthread_mutex_unlock(&minerwork_condvar->mutex);
                 pthread_exit(NULL);
             }
             // Skip to the next iteration if not enough transactions
@@ -439,13 +399,11 @@ void *miner_thread(void *arg)
         {
             log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
             sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
-            pthread_mutex_unlock(&minerwork_condvar->mutex);
-            break; // Exit the loop when the ledger is full
+            break;                          // Exit the loop when the ledger is full
         }
         else
         {
             sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
-            pthread_mutex_unlock(&minerwork_condvar->mutex);
         }
     }
 
@@ -539,30 +497,6 @@ void miner()
     /////////////////////////////////
 
     tx_pool = interfaceTxPool(shm_transactionspool_base);
-
-    // abrir a variavel de condicao
-    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
-    if (shm_minerworkcondvar_fd == -1)
-    {
-        log_info("Erro ao abrir memória partilhada %s", SHM_MINERWORK_CONDVAR);
-        exit(EXIT_FAILURE);
-    }
-    log_info("%s aberta com sucesso", SHM_MINERWORK_CONDVAR);
-    if (ftruncate(shm_minerworkcondvar_fd, sizeof(MinerWorKCondVar)) == -1)
-    {
-        perror("Erro ao redimensionar SHM_MINERWORK_CONDVAR");
-        exit(EXIT_FAILURE);
-    }
-    log_info("%s redimensionada com sucesso para %d bytes", SHM_MINERWORK_CONDVAR, sizeof(MinerWorKCondVar));
-    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
-    if (shm_minerworkcondvar_base == MAP_FAILED)
-    {
-        log_info("Erro ao mapear memória partilhada %s", SHM_MINERWORK_CONDVAR);
-        close(shm_minerworkcondvar_fd);
-        exit(EXIT_FAILURE);
-    }
-    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
-    log_info("%s mapeada com sucesso", SHM_MINERWORK_CONDVAR);
 
     // bloquear o SIGTERM em todas as threads
     sigset_t set;

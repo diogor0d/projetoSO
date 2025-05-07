@@ -37,9 +37,8 @@ int BLOCK_BUFFER_SIZE = 2048;
 
 static sem_t *sem_transactions_pool, *sem_ledger;
 static void *shm_transactionspool_base = NULL;
-static void *shm_minerworkcondvar_base = NULL;
 static void *shm_ledger_base = NULL;
-static int shm_transactionspool_fd, shm_ledger_fd, shm_minerworkcondvar_fd;
+static int shm_transactionspool_fd, shm_ledger_fd;
 int shm_transactionspool_size, shm_ledger_size;
 
 // declarar array para armazenamento dos PIDs dos processos filhos
@@ -258,29 +257,6 @@ static void cleanup()
         log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
     }
 
-    if (shm_minerworkcondvar_fd != -1)
-    {
-        if (close(shm_minerworkcondvar_fd) == -1)
-        {
-            log_info("Erro ao fechar %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-    if (shm_minerworkcondvar_base != NULL)
-    {
-        if (munmap(shm_minerworkcondvar_base, sizeof(MinerWorKCondVar)) == -1)
-        {
-            log_info("Erro ao desmapear %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("Desmapeado %s com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-
     // Close semaphores
     // transactions pool
     if (sem_transactions_pool != NULL)
@@ -343,11 +319,11 @@ static void cleanup()
     {
         if (sem_close(sem_log_file) == -1)
         {
-            printf("\nController:Erro ao fechar semáforo %s\n", SEM_LOG_FILE);
+            printf("\nController: Erro ao fechar semáforo %s\n", SEM_LOG_FILE);
         }
         else
         {
-            printf("\nController:%s fechado com sucesso\n", SEM_LOG_FILE);
+            printf("\nController: %s fechado com sucesso\n", SEM_LOG_FILE);
         }
     }
     // log file
@@ -357,7 +333,7 @@ static void cleanup()
     }
     else
     {
-        printf("\nController: %s terminado com sucesso\n", SEM_LOG_FILE);
+        printf("Controller: %s terminado com sucesso\n", SEM_LOG_FILE);
     }
 
     // Close the log file
@@ -523,62 +499,6 @@ int main()
     {
         log_info("Fechado %s com sucesso", SHM_LEDGER);
     }
-
-    // inicializacao da memoria partilhada para a variavel de condicao para funcionamento dos miners
-    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_CREAT | O_RDWR, 0666);
-    if (shm_minerworkcondvar_fd == -1)
-    {
-        log_info("Erro na criação de %s", SHM_MINERWORK_CONDVAR);
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-    if (ftruncate(shm_minerworkcondvar_fd, sizeof(MinerWorKCondVar)) == -1)
-    {
-        perror("Erro ao redimensionar SHM_MINERWORK_CONDVAR");
-        exit(EXIT_FAILURE);
-    }
-    log_info("%s redimensionada com sucesso para %d bytes", SHM_MINERWORK_CONDVAR, sizeof(MinerWorKCondVar));
-    // mapeamento
-    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
-    if (shm_minerworkcondvar_base == MAP_FAILED)
-    {
-        perror("Erro ao mapear SHM_TRANSACTIONS_POOL");
-        exit(EXIT_FAILURE);
-    }
-    memset(shm_minerworkcondvar_base, 0, sizeof(MinerWorKCondVar)); // Inicializar a memória partilhada a 0 para a variavel de condicao
-
-    MinerWorKCondVar *miner_work_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
-
-    log_info("tamos aqui");
-    // mutex
-    pthread_mutexattr_t mutex_attr;
-    pthread_mutexattr_init(&mutex_attr);
-    pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-
-    // inicializar o mutex na memoria partilhada
-    if (pthread_mutex_init(&miner_work_condvar->mutex, &mutex_attr) != 0)
-    {
-        log_info("Erro ao inicializar o mutex na memória partilhada");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    // condvar
-    pthread_condattr_t cond_attr;
-    pthread_condattr_init(&cond_attr);
-    pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
-
-    // inicializar a variavel de condicao na memoria partilhada
-    if (pthread_cond_init(&miner_work_condvar->cond, &cond_attr) != 0)
-    {
-        log_info("Erro ao inicializar a variável de condição na memória partilhada");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    // Destroy the attributes after initialization
-    pthread_mutexattr_destroy(&mutex_attr);
-    pthread_condattr_destroy(&cond_attr);
 
     // Criar pipe para comunição entre validator e miner
     if ((mkfifo(VALIDATION_PIPE, O_CREAT | O_EXCL | 0777) < 0) && (errno != EEXIST))

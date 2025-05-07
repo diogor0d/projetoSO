@@ -17,3 +17,5 @@ DEIChain_log.txt
 /pow_code
 .fuse_hidden000001fb0000001a
 core
+.fuse_hidden000000d400000010
+.fuse_hidden000000da00000011
