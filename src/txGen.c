@@ -17,13 +17,12 @@
 
 #include "../include/Controller.h"
 
-int tx_number = 0;                  // incremental value for transaction id
-int shm_fd = 0;                     // file descriptor para a shared memory
-sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
-sem_t *sem_enough_tx_pool = NULL;   // semáforo para a transactions pool
-void *shm_base = NULL;              // ponteiro para a memória partilhada
-size_t shm_size = 0;                // tamanho da memória partilhada
-TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
+static int tx_number = 0;                  // incremental value for transaction id
+static int shm_fd = 0;                     // file descriptor para a shared memory
+static sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
+static void *shm_base = NULL;              // ponteiro para a memória partilhada
+static size_t shm_size = 0;                // tamanho da memória partilhada
+static TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
 
 unsigned long long current_time_in_milliseconds()
 {
@@ -40,10 +39,6 @@ void cleanup()
         perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
     }
 
-    if (sem_close(sem_enough_tx_pool) == -1)
-    {
-        perror("Erro ao fechar o semáforo SEM_ENOUGH_TX_POOL\n");
-    }
     // Unmap e fecho da shared memory
     if (munmap(tx_pool, shm_size) == -1)
     {
@@ -139,15 +134,6 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    // Abrir o semáforo sem_enough_tx_pool
-    sem_enough_tx_pool = sem_open(SEM_ENOUGH_TX_POOL, 0);
-    if (sem_enough_tx_pool == SEM_FAILED)
-    {
-        perror("Erro ao abrir semáforo SEM_ENOUGH_TX_POOL\n");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
     // Abrir a memória partilhada
     shm_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
     if (shm_fd == -1)
@@ -217,33 +203,6 @@ int main(int argc, char *argv[])
         {
             perror("Erro ao bloquear o semáforo");
             break;
-        }
-
-        // verificar se ha transacoes suficientes para construir um bloco
-        if (*tx_pool_interface.count >= transactions_per_block)
-        {
-            // desbloquear o semáforo para permitir que o miner possa aceder à pool
-            for (unsigned int i = 0; i < num_miners; i++)
-            {
-                if (sem_post(sem_enough_tx_pool) == -1)
-                {
-                    perror("Erro ao desbloquear o semáforo");
-                    return -1; // Return an error if sem_post fails
-                }
-            }
-            printf("Transações suficientes para construir um bloco. Acordando os miners...\n");
-        }
-        else
-        {
-        }
-        int sem_value;
-        if (sem_getvalue(sem_enough_tx_pool, &sem_value) == -1)
-        {
-            perror("Erro ao obter o valor do semáforo SEM_ENOUGH_TX_POOL");
-        }
-        else
-        {
-            printf("SEM VALUE: %d\n", sem_value); // Debugging line to check semaphore value
         }
 
         if (*tx_pool_interface.count < *tx_pool_interface.size)

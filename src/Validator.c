@@ -16,6 +16,7 @@
 #include <signal.h>
 #include <openssl/sha.h>
 #include <semaphore.h>
+#include <pthread.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -35,8 +36,8 @@ static sem_t *sem_tx_pool = NULL;
 static sem_t *sem_ledger = NULL;
 int NUM_MINERS;
 
-LedgerInterface ledgerInterface;
-TransactionPoolInterface tx_pool;
+static LedgerInterface ledgerInterface;
+static TransactionPoolInterface tx_pool;
 
 // definições de variaveis da transactions pool para acesso em todas as threads
 static void *shm_transactionspool_base = NULL;
@@ -45,6 +46,11 @@ static int shm_transactionspool_fd = -1;
 // definições de variaveis da ledger para acesso em todas as threads
 static void *shm_ledger_base = NULL;
 static int shm_ledger_fd = -1;
+
+// miner work condvar
+static void *shm_minerworkcondvar_base = NULL;
+static int shm_minerworkcondvar_fd = -1;
+static MinerWorKCondVar *minerwork_condvar = NULL;
 
 // variaveis para o pipe de comunicação entre miner e validator
 static int validation_pipe_fd = -1;
@@ -104,6 +110,17 @@ void cleanup()
             log_info("%s fechada com sucesso", SHM_TRANSACTIONS_POOL);
         }
     }
+    if (shm_transactionspool_base != NULL)
+    {
+        if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
+        {
+            log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
+        }
+    }
     if (shm_ledger_fd != -1)
     {
         if (close(shm_ledger_fd) == -1)
@@ -113,6 +130,17 @@ void cleanup()
         else
         {
             log_info("%s fechada com sucesso", SHM_LEDGER);
+        }
+    }
+    if (shm_ledger_base != NULL)
+    {
+        if (munmap(shm_ledger_base, shm_ledger_size) == -1)
+        {
+            log_info("Erro ao desmapear %s", SHM_LEDGER);
+        }
+        else
+        {
+            log_info("Desmapeado %s com sucesso", SHM_LEDGER);
         }
     }
 
@@ -271,6 +299,29 @@ void validator(int num)
         exit(EXIT_FAILURE);
     }
 
+    // abrir a memoria partilhada para a variavel de condicao (já existente)
+    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
+    if (shm_minerworkcondvar_fd == -1)
+    {
+        log_info("Erro ao abrir memória partilhada %s", SHM_MINERWORK_CONDVAR);
+        exit(EXIT_FAILURE);
+    }
+    log_info("%s aberta com sucesso", SHM_MINERWORK_CONDVAR);
+    if (ftruncate(shm_minerworkcondvar_fd, sizeof(MinerWorKCondVar)) == -1)
+    {
+        perror("Erro ao redimensionar SHM_MINERWORK_CONDVAR");
+        exit(EXIT_FAILURE);
+    }
+    log_info("%s redimensionada com sucesso para %d bytes", SHM_MINERWORK_CONDVAR, sizeof(MinerWorKCondVar));
+    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
+    if (shm_minerworkcondvar_base == MAP_FAILED)
+    {
+        log_info("Erro ao mapear memória partilhada %s", SHM_MINERWORK_CONDVAR);
+        exit(EXIT_FAILURE);
+    }
+    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
+    log_info("%s mapeada com sucesso", SHM_MINERWORK_CONDVAR);
+
     // Abrir o semáforo para a transactions pool
     sem_tx_pool = sem_open(SEM_TRANSACTIONS_POOL, 0);
     if (sem_tx_pool == SEM_FAILED)
@@ -345,6 +396,20 @@ void validator(int num)
 
     while (1)
     {
+        if (ledgerInterface.count < ledgerInterface.num_blocks)
+        {
+            if (num == 1)
+            {
+                if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0)
+                {
+                    pthread_mutex_lock(&minerwork_condvar->mutex);
+                    pthread_cond_broadcast(&minerwork_condvar->cond);
+                    pthread_mutex_unlock(&minerwork_condvar->mutex);
+                }
+            }
+            break;
+        }
+
         // tamanho - "header" - transacoes
         size_t MAX_BLOCK_SIZE = sizeof(size_t) + (sizeof(TransactionBlock) - sizeof(Transaction *)) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
         char *buffer = malloc(MAX_BLOCK_SIZE);
@@ -398,14 +463,6 @@ void validator(int num)
         memcpy(streamed_block.transactions, payload + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
 
         log_info("Bloco recebido: %s\n", streamed_block.txb_id);
-
-        // sem_wait(sem_ledger); // bloquear o semáforo para o ledger
-        if (!(*(ledgerInterface.count) < *(ledgerInterface.num_blocks)))
-        {
-            log_info("Ledger cheia. A aguardar...\n");
-            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-            continue;
-        }
 
         if (!verify_nonce(&streamed_block))
         {
@@ -592,6 +649,13 @@ void validator(int num)
             free(streamed_block.transactions);
         }
     }
+    if (num == 1)
+    {
+        pthread_mutex_lock(&minerwork_condvar->mutex);
+        pthread_cond_broadcast(&minerwork_condvar->cond);
+        pthread_mutex_unlock(&minerwork_condvar->mutex);
+    }
 
+    printf("toua fhecar mano\n");
     cleanup();
 }

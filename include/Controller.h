@@ -19,10 +19,10 @@
 #define SEM_TRANSACTIONS_POOL "/sem_transactions_pool"
 #define SEM_LEDGER "/sem_ledger"
 #define SEM_LOG_FILE "/sem_log_file"
-#define SEM_ENOUGH_TX_POOL "/sem_enough_tx_pool"
 
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
+#define SHM_MINERWORK_CONDVAR "/shm_minerwork_condvar"
 
 #define VALIDATION_PIPE "/tmp/validation_pipe"
 
@@ -34,6 +34,12 @@ extern int NUM_MINERS;
 extern size_t TRANSACTIONS_PER_BLOCK;
 extern size_t transactions_per_block; // para compatibilidade com o PoW (sem o modificar)
 extern int BLOCKCHAIN_BLOCKS;
+
+typedef struct
+{
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} MinerWorKCondVar;
 
 typedef struct
 {
