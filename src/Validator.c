@@ -34,8 +34,6 @@ int shm_ledger_size;
 
 static sem_t *sem_tx_pool = NULL;
 static sem_t *sem_ledger = NULL;
-static sem_t *sem_originblock = NULL;
-static sem_t *sem_enoughtx = NULL;
 int NUM_MINERS;
 
 static LedgerInterface ledgerInterface;
@@ -189,31 +187,6 @@ void cleanup()
         }
     }
 
-    if (sem_enoughtx != NULL)
-    {
-        if (sem_close(sem_enoughtx) == -1)
-        {
-            log_info("Erro ao fechar semáforo %s", SEM_ENOUGHTX);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SEM_ENOUGHTX);
-        }
-    }
-
-    // origin block
-    if (sem_originblock != NULL)
-    {
-        if (sem_close(sem_originblock) == -1)
-        {
-            log_info("Erro ao fechar semáforo SEM_ORIGINBLOCK");
-        }
-        else
-        {
-            log_info("sem_originblock fechado com sucesso");
-        }
-    }
-
     // Close the log file
     if (log_file)
     {
@@ -339,23 +312,6 @@ void validator(int num)
         exit(EXIT_FAILURE);
     }
 
-    // enough tx
-    sem_enoughtx = sem_open(SEM_ENOUGHTX, 0);
-    if (sem_enoughtx == SEM_FAILED)
-    {
-        log_info("Erro ao abrir semáforo %s", SEM_ENOUGHTX);
-        return;
-    }
-
-    // semaforo bloco origem
-    sem_originblock = sem_open(SEM_ORIGINBLOCK, 0);
-    if (sem_originblock == SEM_FAILED)
-    {
-        log_info("Erro ao abrir semáforo SEM_ORIGINBLOCK");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
     validation_pipe_fd = open(VALIDATION_PIPE, O_RDONLY);
     if (validation_pipe_fd < 0)
     {
@@ -405,8 +361,6 @@ void validator(int num)
 
         free(nemesis_block.transactions); // Free the allocated memory for transactions
         log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
-
-        sem_post(sem_originblock);
     }
 
     sem_post(sem_ledger); // desbloquear o semáforo para o ledger

@@ -40,7 +40,7 @@ static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
 static void *shm_minerworkcondvar_base = NULL;
 
-static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_enoughtx, *sem_originblock;
+static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclosed;
 
 int shm_transactionspool_size, shm_ledger_size;
 
@@ -171,6 +171,10 @@ static void cleanup()
     {
         if (pids[i] > 0) // Ensure the PID is valid
         {
+            if (i == 1)
+            {
+                sem_wait(sem_pipeclosed); // Wait for the pipe to be closed before sending SIGTERM
+            }
             log_info("Enviado SIGTERM para o processo filho com PID %d", pids[i]);
             if (kill(pids[i], SIGTERM) == -1)
             {
@@ -319,32 +323,6 @@ static void cleanup()
         }
     }
 
-    // enoughtx
-    if (sem_enoughtx != NULL)
-    {
-        if (sem_close(sem_enoughtx) == -1)
-        {
-            log_info("Erro ao fechar semáforo %s", SEM_ENOUGHTX);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SEM_ENOUGHTX);
-        }
-    }
-
-    // originblock
-    if (sem_originblock != NULL)
-    {
-        if (sem_close(sem_originblock) == -1)
-        {
-            log_info("Erro ao fechar semáforo %s", SEM_ORIGINBLOCK);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SEM_ORIGINBLOCK);
-        }
-    }
-
     // ledger
     if (sem_ledger != NULL)
     {
@@ -355,6 +333,19 @@ static void cleanup()
         else
         {
             log_info("%s fechado com sucesso", SEM_LEDGER);
+        }
+    }
+
+    // sem pipe closed
+    if (sem_pipeclosed != NULL)
+    {
+        if (sem_close(sem_pipeclosed) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_PIPECLOSED);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_PIPECLOSED);
         }
     }
 
@@ -387,23 +378,14 @@ static void cleanup()
         log_info("%s terminado com sucesso", SEM_MINERWORK);
     }
 
-    if (sem_unlink(SEM_ENOUGHTX) == -1)
+    // sem pipe closed
+    if (sem_unlink(SEM_PIPECLOSED) == -1)
     {
-        log_info("Erro ao terminar semáforo %s", SEM_ENOUGHTX);
+        log_info("Erro ao terminar semáforo %s", SEM_PIPECLOSED);
     }
     else
     {
-        log_info("%s terminado com sucesso", SEM_ENOUGHTX);
-    }
-
-    // originblock
-    if (sem_unlink(SEM_ORIGINBLOCK) == -1)
-    {
-        log_info("Erro ao terminar semáforo %s", SEM_ORIGINBLOCK);
-    }
-    else
-    {
-        log_info("%s terminado com sucesso", SEM_ORIGINBLOCK);
+        log_info("%s terminado com sucesso", SEM_PIPECLOSED);
     }
 
     // Fechar o pipe
@@ -458,7 +440,9 @@ int main()
     for (int i = 1; i < NSIG; i++) // NSIG is the total number of signals
     {
         // Ignorar sinais que não podem ser tratados ou que não podem ser ignorados
-        if (i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
+
+        // VOLTAR A TIRAR O SIGTSTP
+        if (i == SIGTSTP || i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
         {
             continue;
         }
@@ -529,20 +513,11 @@ int main()
         exit(EXIT_FAILURE);
     }
 
-    // semaforo enough transactions
-    sem_enoughtx = sem_open(SEM_ENOUGHTX, O_CREAT, 0666, 0);
-    if (sem_enoughtx == SEM_FAILED)
+    // sem pipe closed
+    sem_pipeclosed = sem_open(SEM_PIPECLOSED, O_CREAT, 0666, 0);
+    if (sem_pipeclosed == SEM_FAILED)
     {
-        log_info("Erro ao criar semáforo para ENOUGH_TX");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    // semaforo bloco origem
-    sem_originblock = sem_open(SEM_ORIGINBLOCK, O_CREAT, 0666, 0);
-    if (sem_originblock == SEM_FAILED)
-    {
-        log_info("Erro ao criar semáforo para ORIGIN_BLOCK");
+        log_info("Erro ao criar semáforo para PIPE_CLOSED");
         cleanup();
         exit(EXIT_FAILURE);
     }
@@ -699,6 +674,11 @@ int main()
 
     // Iniciar os processos dos varios componentes
 
+    // IMPLEMENTACAO DE VALIDATOR DESATUALIZADA :
+    // - thread para gestao de numero de validators
+    // - numero de validators aativo dinamico
+    // Iniciar o validator
+
     // Iniciar o miner
     pids[0] = fork();
     if (pids[0] == -1)
@@ -714,10 +694,6 @@ int main()
         exit(EXIT_SUCCESS);
     }
 
-    // IMPLEMENTACAO DE VALIDATOR DESATUALIZADA :
-    // - thread para gestao de numero de validators
-    // - numero de validators aativo dinamico
-    // Iniciar o validator
     pids[1] = fork();
     if (pids[1] == -1)
     {

@@ -21,7 +21,7 @@
 static int tx_number = 0;                  // incremental value for transaction id
 static int shm_fd = 0;                     // file descriptor para a shared memory
 static sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
-static sem_t *sem_enoughtx = NULL;         // semáforo para o miner work
+static sem_t *sem_minerwork = NULL;        // semáforo para o miner work
 static void *shm_base = NULL;              // ponteiro para a memória partilhada
 static size_t shm_size = 0;                // tamanho da memória partilhada
 static TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
@@ -51,9 +51,9 @@ void cleanup()
         }
     }
 
-    if (sem_enoughtx != NULL)
+    if (sem_minerwork != NULL)
     {
-        if (sem_close(sem_enoughtx) == -1)
+        if (sem_close(sem_minerwork) == -1)
         {
             perror("Erro ao fechar o semáforo SEM_MINERWORK\n");
         }
@@ -176,8 +176,8 @@ int main(int argc, char *argv[])
         exit(EXIT_FAILURE);
     }
 
-    sem_enoughtx = sem_open(SEM_ENOUGHTX, 0);
-    if (sem_enoughtx == SEM_FAILED)
+    sem_minerwork = sem_open(SEM_MINERWORK, 0);
+    if (sem_minerwork == SEM_FAILED)
     {
         perror("Erro ao abrir semáforo SEM_MINERWORK\n");
         cleanup();
@@ -299,22 +299,20 @@ int main(int argc, char *argv[])
         // apresentar contagem da tx pool
         printf("Transações na transactions pool: %d\n", *tx_pool_interface.count);
         printf("Trasacoes geradas: %d\n", generated_transactions);
-        // print sem value
-        int sem_value;
-        sem_getvalue(sem_enoughtx, &sem_value);
-        printf("Valor do semáforo enought: %d\n", sem_value);
 
         if (generated_transactions > (int)transactions_per_block && generated_transactions % transactions_per_block == 0)
         {
-            // 3. Lock the shared mutex
-            pthread_mutex_lock(&minerwork_condvar->mutex);
-
-            printf("Sinalizando miners para criar blocos...\n");
-            // pthread_cond_signal(&minerwork_condvar->cond);
-            pthread_cond_broadcast(&minerwork_condvar->cond);
-
-            // 5. Unlock
-            pthread_mutex_unlock(&minerwork_condvar->mutex);
+            int sval;
+            sem_getvalue(sem_minerwork, &sval);
+            // sval = number of posts not yet consumed.
+            // We want at most NUM_MINERS outstanding.
+            int to_post = num_miners - sval;
+            if (to_post <= 0)
+                continue; // already enough “permits” queued
+            for (int i = 0; i < to_post; i++)
+            {
+                sem_post(sem_minerwork);
+            }
         }
 
         // Desbloquear o semáforo após a escrita
