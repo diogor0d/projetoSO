@@ -17,6 +17,7 @@
 #include <signal.h>
 #include <openssl/sha.h>
 #include <stdbool.h>
+#include <errno.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -27,6 +28,10 @@ static FILE *log_file = NULL;
 static char *TIPO_PROCESSO = NULL;
 
 static sem_t *sem_transactionspool = NULL;
+static sem_t *sem_minerwork = NULL;
+static sem_t *sem_enoughtx = NULL;
+static sem_t *sem_originblock = NULL;
+static sem_t *sem_ledger = NULL;
 
 // aceder a variavel globais do controller
 int NUM_MINERS;
@@ -45,6 +50,11 @@ static int shm_transactionspool_fd = -1;
 // definições de variaveis da ledger para acesso em todas as threads
 static void *shm_ledger_base = NULL;
 static int shm_ledger_fd = -1;
+
+// minerwork condvar
+int shm_minerworkcondvar_fd = -1;
+static void *shm_minerworkcondvar_base = NULL;
+MinerWorKCondVar *minerwork_condvar = NULL;
 
 // variaveis para o pipe de comunicação entre miner e validator
 static int validation_pipe_fd = -1;
@@ -181,6 +191,54 @@ static void cleanup()
         }
     }
 
+    if (sem_minerwork != NULL)
+    {
+        if (sem_close(sem_minerwork) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_MINERWORK);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_MINERWORK);
+        }
+    }
+
+    if (sem_enoughtx != NULL)
+    {
+        if (sem_close(sem_enoughtx) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_ENOUGHTX);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_ENOUGHTX);
+        }
+    }
+
+    if (sem_originblock != NULL)
+    {
+        if (sem_close(sem_originblock) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_ORIGINBLOCK);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_ORIGINBLOCK);
+        }
+    }
+
+    if (sem_ledger != NULL)
+    {
+        if (sem_close(sem_ledger) == -1)
+        {
+            log_info("Erro ao fechar semáforo %s", SEM_LEDGER);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", SEM_LEDGER);
+        }
+    }
+
     // Close the log file
     if (log_file)
     {
@@ -241,22 +299,49 @@ void *miner_thread(void *arg)
 
     int block_number = 0;
 
-    while (1) // pthread cancel
+    while (1)
     {
 
-        // pthread_testcancel(); // Check for cancellation reques
+        // sem_wait(sem_minerwork); // Wait for the signal to start working
+        //  pthread_testcancel(); // Check for cancellation reques
 
         // log_info("Transacoes na pool: %d", *tx_pool.count);
 
         //   Create a temporary array to sort transactions
 
+        pthread_testcancel(); // Explicitly check for cancellation
+        // cond var
+        // Lock the shared mutex
+        pthread_mutex_lock(&minerwork_condvar->mutex);
+
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 3; // Timeout de transacoes disponiveis
+
+        int ret = pthread_cond_timedwait(&minerwork_condvar->cond, &minerwork_condvar->mutex, &ts);
+        if (ret == ETIMEDOUT)
+        {
+            log_info("Thread %d: sem informação dos geradores de transaçÕes: a verificar transações na pool...", thread_id);
+        }
+        else if (ret == 0)
+        {
+            log_info("Thread %d: Transaction generator sinalizou transações suficientes: iniciar construção de bloco...", thread_id);
+        }
+        else
+        {
+            log_info("Thread %d: pthread_cond_timedwait retornou erro %d", thread_id, ret);
+        }
+        pthread_mutex_unlock(&minerwork_condvar->mutex);
+
+        pthread_testcancel(); // Explicitly check for cancellation
+
+        sem_wait(sem_transactionspool);
+        sem_wait(sem_ledger); // desbloquear o semáforo para o ledger
         // apesar da redundancia desta condição, ela é efetuada para garantir a clareza da operação de cada thread
         if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
 
             // incrementar o número do bloco
-
-            sem_wait(sem_transactionspool);
 
             // print_transaction_pool(&tx_pool);
 
@@ -268,6 +353,7 @@ void *miner_thread(void *arg)
             {
                 log_info("Thread %d: Falha ao alocar memória para as transações selecionadas", thread_id);
                 sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+                sem_post(sem_ledger);           // desbloquear o semáforo para o ledger
                 pthread_exit(NULL);
             }
 
@@ -277,7 +363,8 @@ void *miner_thread(void *arg)
             if (selected_bitmap == NULL)
             {
                 log_info("Thread %d: Falha ao alocar memória para o bitmap de transações selecionadas", thread_id);
-                sem_post(sem_transactionspool); // Unlock the semaphore
+                sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+                sem_post(sem_ledger);           // desbloquear o semáforo para o ledger
                 pthread_exit(NULL);
             }
             // Skip to the next iteration if not enough transactions
@@ -308,17 +395,19 @@ void *miner_thread(void *arg)
                     strncpy(selected_transactions[selected_count].tx_id, current_transaction->tx.tx_id, TX_ID_LEN);
                     selected_count++;
                 }
+                pthread_testcancel(); // Explicitly check for cancellation
             }
 
             // Free the bitmap after use
             free(selected_bitmap);
 
-            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
-
             // Create a block
             TransactionBlock block;
             memset(&block, 0, sizeof(TransactionBlock)); // Initialize the block to zero
             snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, block_number);
+
+            // sem_wait(sem_ledger); // bloquear o semáforo para o ledger
+
             strncpy(block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE); // alterar para o hash do bloco anterior
             block.transactions = selected_transactions;
 
@@ -330,6 +419,7 @@ void *miner_thread(void *arg)
             {
                 // Timestamp: current time
                 block.timestamp = time(NULL);
+                pthread_testcancel(); // Explicitly check for cancellation
                 r = proof_of_work(&block);
 
             } while (r.error == 1 && !stop_threads);
@@ -379,12 +469,14 @@ void *miner_thread(void *arg)
             // signal(SIGPIPE, SIG_IGN);
 
             // Write to pipe
-            printf("Thread %d: Enviando bloco %s para o pipe de validação\n", thread_id, block.txb_id);
+            // printf("Thread %d: Enviando bloco %s para o pipe de validação\n", thread_id, block.txb_id);
             ssize_t written = write(validation_pipe_fd, buffer, total_size);
             if ((size_t)written != total_size)
             {
                 log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
             }
+
+            // sem_post(sem_ledger); // desbloquear o semáforo para o ledger
 
             free(buffer);
             free(selected_transactions);
@@ -398,13 +490,17 @@ void *miner_thread(void *arg)
         else if (*ledgerInterface.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
             log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
-            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
-            break;                          // Exit the loop when the ledger is full
+            // sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+            break; // Exit the loop when the ledger is full
         }
         else
         {
-            sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+            // sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
         }
+        sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
+        sem_post(sem_ledger);           // desbloquear o semáforo para o ledger
+
+        // sem_post(sem_minerwork);
     }
 
     log_info("Miner thread %d terminou.", thread_id);
@@ -434,6 +530,38 @@ void miner()
     if (sem_transactionspool == SEM_FAILED)
     {
         log_info("\Erro ao abrir semáforo %s", SEM_TRANSACTIONS_POOL);
+        return;
+    }
+
+    // abrir semaforo minerwork
+    sem_minerwork = sem_open(SEM_MINERWORK, 0);
+    if (sem_minerwork == SEM_FAILED)
+    {
+        log_info("Erro ao abrir semáforo %s", SEM_MINERWORK);
+        return;
+    }
+
+    // enough tx
+    sem_enoughtx = sem_open(SEM_ENOUGHTX, 0);
+    if (sem_enoughtx == SEM_FAILED)
+    {
+        log_info("Erro ao abrir semáforo %s", SEM_ENOUGHTX);
+        return;
+    }
+
+    // origin block
+    sem_originblock = sem_open(SEM_ORIGINBLOCK, 0);
+    if (sem_originblock == SEM_FAILED)
+    {
+        log_info("Erro ao abrir semáforo %s", SEM_ORIGINBLOCK);
+        return;
+    }
+
+    //
+    sem_ledger = sem_open(SEM_LEDGER, 0);
+    if (sem_ledger == SEM_FAILED)
+    {
+        log_info("Erro ao abrir semáforo %s", SEM_LEDGER);
         return;
     }
 
@@ -483,6 +611,28 @@ void miner()
         exit(EXIT_FAILURE);
     }
     log_info("%s mapeada com sucesso", SHM_LEDGER);
+
+    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
+    if (shm_minerworkcondvar_fd == -1)
+    {
+        perror("Erro ao abrir SHM_MINERWORK_CONDVAR");
+        exit(EXIT_FAILURE);
+    }
+
+    // Map it
+    shm_minerworkcondvar_base = mmap(
+        NULL,
+        sizeof(MinerWorKCondVar),
+        PROT_READ | PROT_WRITE,
+        MAP_SHARED,
+        shm_minerworkcondvar_fd,
+        0);
+    if (shm_minerworkcondvar_base == MAP_FAILED)
+    {
+        perror("Erro ao mapear SHM_MINERWORK_CONDVAR");
+        exit(EXIT_FAILURE);
+    }
+    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
 
     //////////////////////////////////////
 
@@ -538,10 +688,11 @@ void miner()
         pthread_join(threads[i], NULL);
     }
 
+    log_info("Todas as miner threads terminaram.");
+
     // esperar pela thread de tratamento de sinais
     pthread_join(signal_thread, NULL);
-
-    log_info("Todas as miner threads terminaram.");
+    log_info("Thread de tratamento de sinais terminada.");
 
     cleanup();
 }

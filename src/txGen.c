@@ -14,15 +14,24 @@
 #include <time.h>
 #include <semaphore.h>
 #include <signal.h>
+#include <pthread.h>
 
 #include "../include/Controller.h"
 
 static int tx_number = 0;                  // incremental value for transaction id
 static int shm_fd = 0;                     // file descriptor para a shared memory
 static sem_t *sem_tx_pool = NULL;          // semáforo para a transactions pool
+static sem_t *sem_enoughtx = NULL;         // semáforo para o miner work
 static void *shm_base = NULL;              // ponteiro para a memória partilhada
 static size_t shm_size = 0;                // tamanho da memória partilhada
 static TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
+
+// cond var
+static int shm_minerworkcondvar_fd = -1;
+static void *shm_minerworkcondvar_base = NULL;
+static MinerWorKCondVar *minerwork_condvar = NULL; // ponteiro para a cond var
+
+static int generated_transactions = 0; // contador de blocos gerados
 
 unsigned long long current_time_in_milliseconds()
 {
@@ -34,19 +43,52 @@ unsigned long long current_time_in_milliseconds()
 void cleanup()
 {
     // Fechar o semáforo
-    if (sem_close(sem_tx_pool) == -1)
+    if (sem_tx_pool != NULL)
     {
-        perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+        if (sem_close(sem_tx_pool) == -1)
+        {
+            perror("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL\n");
+        }
+    }
+
+    if (sem_enoughtx != NULL)
+    {
+        if (sem_close(sem_enoughtx) == -1)
+        {
+            perror("Erro ao fechar o semáforo SEM_MINERWORK\n");
+        }
     }
 
     // Unmap e fecho da shared memory
-    if (munmap(tx_pool, shm_size) == -1)
+    if (shm_fd != -1)
     {
-        perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
+        if (shm_base != NULL)
+        {
+            if (munmap(shm_base, shm_size) == -1)
+            {
+                perror("Erro ao desmapear SHM_TRANSACTIONS_POOL\n");
+            }
+        }
+        if (close(shm_fd) == -1)
+        {
+            perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
+        }
     }
-    if (close(shm_fd) == -1)
+
+    // limpar recursos da cond var
+    if (shm_minerworkcondvar_fd != -1)
     {
-        perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
+        if (shm_minerworkcondvar_base != NULL)
+        {
+            if (munmap(shm_minerworkcondvar_base, sizeof(MinerWorKCondVar)) == -1)
+            {
+                perror("Erro ao desmapear SHM_MINERWORK_CONDVAR\n");
+            }
+        }
+        if (close(shm_minerworkcondvar_fd) == -1)
+        {
+            perror("Erro ao fechar SHM_MINERWORK_CONDVAR\n");
+        }
     }
 }
 
@@ -129,7 +171,15 @@ int main(int argc, char *argv[])
     sem_tx_pool = sem_open(SEM_TRANSACTIONS_POOL, 0);
     if (sem_tx_pool == SEM_FAILED)
     {
-        perror("Erro ao abrir semáforo SEM_TRANSACTIONS_POOL\n");
+        perror("Erro ao abrir semáforo SEM_TRANSACTIONS_POOL\nSimulação não está em execução?\n");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+
+    sem_enoughtx = sem_open(SEM_ENOUGHTX, 0);
+    if (sem_enoughtx == SEM_FAILED)
+    {
+        perror("Erro ao abrir semáforo SEM_MINERWORK\n");
         cleanup();
         exit(EXIT_FAILURE);
     }
@@ -190,6 +240,24 @@ int main(int argc, char *argv[])
 
     tx_pool = (TransactionPoolSHM *)shm_base;
 
+    // abrir cond var
+    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
+    if (shm_minerworkcondvar_fd == -1)
+    {
+        perror("Erro ao abrir SHM_MINERWORK_CONDVAR\n");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+
+    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
+    if (shm_minerworkcondvar_base == MAP_FAILED)
+    {
+        perror("Erro ao mapear SHM_MINERWORK_CONDVAR\n");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
+
     srand(time(NULL));
 
     // O facto das transações estarem na shared memory impede o uso direto de ponteiros, que apenas dizem respeito ao espaço de endereçamento do processo atual. Portanto, é necessário recorrer a offsets para manipular o acesso aos dados em cada processo que acede à shared memory. Para isso, utiliza-se uma interface local de acesso à transactions pool que aponta para os dados na memoria mapeada para a shared memory.
@@ -218,6 +286,7 @@ int main(int argc, char *argv[])
                     tx_pool_interface.transactions[i] = new_tx;
                     (*tx_pool_interface.count)++;
                     printf("Transação Gerada > ID: %s, Reward: %d\n", new_tx.tx.tx_id, new_tx.tx.reward);
+                    generated_transactions++;
                     break;
                 }
             }
@@ -225,6 +294,27 @@ int main(int argc, char *argv[])
         else
         {
             printf("Transactions pool cheia. Aguardando...\n");
+        }
+
+        // apresentar contagem da tx pool
+        printf("Transações na transactions pool: %d\n", *tx_pool_interface.count);
+        printf("Trasacoes geradas: %d\n", generated_transactions);
+        // print sem value
+        int sem_value;
+        sem_getvalue(sem_enoughtx, &sem_value);
+        printf("Valor do semáforo enought: %d\n", sem_value);
+
+        if (generated_transactions > (int)transactions_per_block && generated_transactions % transactions_per_block == 0)
+        {
+            // 3. Lock the shared mutex
+            pthread_mutex_lock(&minerwork_condvar->mutex);
+
+            printf("Sinalizando miners para criar blocos...\n");
+            // pthread_cond_signal(&minerwork_condvar->cond);
+            pthread_cond_broadcast(&minerwork_condvar->cond);
+
+            // 5. Unlock
+            pthread_mutex_unlock(&minerwork_condvar->mutex);
         }
 
         // Desbloquear o semáforo após a escrita

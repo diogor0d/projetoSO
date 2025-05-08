@@ -19,6 +19,9 @@
 #define SEM_TRANSACTIONS_POOL "/sem_transactions_pool"
 #define SEM_LEDGER "/sem_ledger"
 #define SEM_LOG_FILE "/sem_log_file"
+#define SEM_MINERWORK "/sem_minerwork"
+#define SEM_ENOUGHTX "/sem_enoughtx"
+#define SEM_ORIGINBLOCK "/sem_originblock"
 
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
