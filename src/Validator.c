@@ -17,6 +17,7 @@
 #include <openssl/sha.h>
 #include <semaphore.h>
 #include <pthread.h>
+#include <mqueue.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -35,6 +36,8 @@ int shm_ledger_size;
 static sem_t *sem_tx_pool = NULL;
 static sem_t *sem_ledger = NULL;
 int NUM_MINERS;
+
+static mqd_t statistics_mq;
 
 static LedgerInterface ledgerInterface;
 static TransactionPoolInterface tx_pool;
@@ -247,6 +250,7 @@ void validator(int num)
     if (sem_log_file == SEM_FAILED)
     {
         perror("\nVALIDATOR : Erro ao abrir semáforo para LOG_FILE");
+        cleanup();
         return;
     }
 
@@ -254,6 +258,7 @@ void validator(int num)
     if (log_file == NULL)
     {
         perror("\nVALIDATOR : Erro ao abrir o ficheiro de log");
+        cleanup();
         return;
     }
     char buffer[20];
@@ -265,6 +270,7 @@ void validator(int num)
     if (shm_transactionspool_fd == -1)
     {
         log_info("Erro ao abrir memória partilhada para transactions pool");
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -273,7 +279,7 @@ void validator(int num)
     if (shm_transactionspool_base == MAP_FAILED)
     {
         log_info("Erro ao mapear memória partilhada para transactions pool");
-        close(shm_transactionspool_fd);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -282,6 +288,7 @@ void validator(int num)
     if (shm_ledger_fd == -1)
     {
         log_info("Erro ao abrir memória partilhada para ledger");
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -290,7 +297,7 @@ void validator(int num)
     if (shm_ledger_base == MAP_FAILED)
     {
         log_info("Erro ao mapear memória partilhada para transactions pool");
-        close(shm_ledger_fd);
+        cleanup();
         exit(EXIT_FAILURE);
     }
 
@@ -316,9 +323,18 @@ void validator(int num)
     if (validation_pipe_fd < 0)
     {
         log_info("Erro ao abrir o pipe de validação");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     log_info("Pipe de validação aberto com sucesso.");
+
+    statistics_mq = mq_open(STATISTICS_MQ, O_WRONLY);
+    if (statistics_mq == (mqd_t)-1)
+    {
+        log_info("Erro ao abrir a message queue %s", STATISTICS_MQ);
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
 
     signal(SIGTERM, sigterm); // tratar o sinal SIGTERM para terminar o processo corretamente
 

@@ -20,6 +20,7 @@
 #include <signal.h>
 #include <errno.h>
 #include <pthread.h>
+#include <mqueue.h>
 
 #include "../include/Controller.h"
 #include "../include/Miner.h"
@@ -31,7 +32,6 @@ size_t TRANSACTIONS_PER_BLOCK;
 size_t transactions_per_block; // para compatibilidade com o PoW
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE;
-int BLOCK_BUFFER_SIZE = 2048;
 
 // Definições de semáforos e memória partilhada para acesso global
 
@@ -43,6 +43,9 @@ static void *shm_minerworkcondvar_base = NULL;
 static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclosed;
 
 int shm_transactionspool_size, shm_ledger_size;
+
+// mesage queue
+mqd_t statistics_mq;
 
 // declarar array para armazenamento dos PIDs dos processos filhos
 pid_t pids[3];
@@ -349,6 +352,19 @@ static void cleanup()
         }
     }
 
+    // fechar message queue
+    if (statistics_mq != -1)
+    {
+        if (mq_close(statistics_mq) == -1)
+        {
+            log_info("Erro ao fechar message queue %s", STATISTICS_MQ);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", STATISTICS_MQ);
+        }
+    }
+
     // Unlink semaphores
     // transactions pool
     if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
@@ -388,7 +404,7 @@ static void cleanup()
         log_info("%s terminado com sucesso", SEM_PIPECLOSED);
     }
 
-    // Fechar o pipe
+    // terminar o pipe
     if (unlink(VALIDATION_PIPE) == -1)
     {
         log_info("Erro ao terminar o pipe %s", VALIDATION_PIPE);
@@ -396,6 +412,16 @@ static void cleanup()
     else
     {
         log_info("%s terminado com sucesso", VALIDATION_PIPE);
+    }
+
+    // Terminar message queue
+    if (mq_unlink(STATISTICS_MQ) == -1)
+    {
+        log_info("Erro ao terminar message queue %s", STATISTICS_MQ);
+    }
+    else
+    {
+        log_info("%s terminado com sucesso", STATISTICS_MQ);
     }
 
     // log file
@@ -629,7 +655,6 @@ int main()
 
     MinerWorKCondVar *miner_work_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
 
-    log_info("tamos aqui");
     // mutex
     pthread_mutexattr_t mutex_attr;
     pthread_mutexattr_init(&mutex_attr);
@@ -670,6 +695,25 @@ int main()
     else
     {
         log_info("Pipe %s criado com sucesso", VALIDATION_PIPE);
+    }
+
+    // criar a message queue para o statistics
+    struct mq_attr attr;
+    attr.mq_flags = 0;
+    attr.mq_maxmsg = STATISTICS_MQ_SIZE; // número máximo de mensagens na fila
+    attr.mq_msgsize = STATISTICS_MQ_MSG_SIZE;
+    attr.mq_curmsgs = 0;
+
+    statistics_mq = mq_open(STATISTICS_MQ, O_CREAT | O_RDWR, 0666, &attr);
+    if (statistics_mq == (mqd_t)-1)
+    {
+        log_info("Erro ao criar a message queue %s: %s", STATISTICS_MQ, strerror(errno));
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        log_info("Message queue %s criada com sucesso", STATISTICS_MQ);
     }
 
     // Iniciar os processos dos varios componentes

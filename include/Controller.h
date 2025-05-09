@@ -30,6 +30,10 @@
 
 #define VALIDATION_PIPE "/tmp/validation_pipe"
 
+#define STATISTICS_MQ "/statistics_mq"
+#define STATISTICS_MQ_SIZE 10
+#define STATISTICS_MQ_MSG_SIZE 1024
+
 #define TX_ID_LEN 64
 #define HASH_SIZE 65 // SHA256_DIGEST_LENGTH * 2 + 1
 #define TXB_ID_LEN 64
