@@ -275,7 +275,7 @@ void validator(int num)
         return;
     }
     char buffer[20];
-    snprintf(buffer, sizeof(buffer), "VALIDATOR %d", num);
+    snprintf(buffer, sizeof(buffer), "VALIDATOR-%d-%d", num, getpid());
     TIPO_PROCESSO = strdup(buffer);
 
     // abrir a memoria partilhada para a transactions pool (já existente)
@@ -400,7 +400,6 @@ void validator(int num)
 
     while (1)
     {
-
         // tamanho - "header" - transacoes
         size_t MAX_BLOCK_SIZE = sizeof(size_t) + (sizeof(TransactionBlock) - sizeof(Transaction *)) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
         char *buffer = malloc(MAX_BLOCK_SIZE);
@@ -457,84 +456,140 @@ void validator(int num)
 
         StatisticsMessage new_msg;
         int skip_block = 0; // Flag to indicate whether to skip the block
+        char last_block_hash[HASH_SIZE];
 
+        // OPTIMIZATION 1: Minimize ledger lock time - get hash and check nonce
+        sem_wait(sem_ledger);
+        memcpy(last_block_hash, ledgerInterface.last_block_hash, HASH_SIZE);
+        sem_post(sem_ledger);
+
+        // Verify nonce - can be done outside lock
         if (!verify_nonce(&streamed_block))
         {
-            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
             log_info("Bloco recebido com nonce inválido\n");
-            skip_block = 1; // avançar para a receção de um proximo bloco
+            skip_block = 1;
         }
 
-        if (strncmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE) != 0)
+        // Check hash - can be done outside lock since we copied the hash
+        if (strncmp(streamed_block.previous_block_hash, last_block_hash, HASH_SIZE) != 0)
         {
             log_info("Bloco recebido com hash anterior inválida - Bloco %s rejeitado", streamed_block.txb_id);
-            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-            skip_block = 1;       // avançar para a receção de um proximo bloco
+            skip_block = 1;
         }
 
-        // print_transaction_pool(&tx_pool); // Print the transaction pool
+        // OPTIMIZATION 2: Create a copy of the transactions we need to check
+        // This allows us to minimize the time we hold the transaction pool lock
+        Transaction temp_tx_array[TRANSACTIONS_PER_BLOCK];
 
-        // verificar se todas as transacoes do bloco se encontram na transactions pool
-        if (sem_wait(sem_tx_pool) == -1)
+        // Dynamically allocate tx_found_bitmap
+        int *tx_found_bitmap = calloc(TRANSACTIONS_PER_BLOCK, sizeof(int));
+        if (!tx_found_bitmap)
         {
-            log_info("Erro ao bloquear o semáforo");
-            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
+            perror("calloc tx_found_bitmap");
+            free(buffer);
+            free(streamed_block.transactions);
             break;
         }
 
-        log_info("Verificando transações do bloco %s", streamed_block.txb_id);
-        for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+        if (!skip_block)
         {
-            // log_info("Verificando transação %s", streamed_block.transactions[i].tx_id);
-            int found = 0;
-            for (size_t j = 0; j < *(tx_pool.size); j++)
+            // OPTIMIZATION 3: Hold transaction pool lock only for the minimum time needed
+            sem_wait(sem_tx_pool);
+
+            // First, check if transactions exist in the pool
+            log_info("Verificando transações do bloco %s", streamed_block.txb_id);
+            for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK && !skip_block; i++)
             {
-                if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
+                int found = 0;
+                for (size_t j = 0; j < *(tx_pool.size); j++)
                 {
-                    if (txCompare(&streamed_block.transactions[i], &tx_pool.transactions[j].tx) == 0)
+                    if (tx_pool.transactions[j].filled == 0)
                     {
-                        log_info("Conteudo transação %s referenciada difere da transacao na transactions pool. Bloco %s rejeitado", streamed_block.transactions[i].tx_id, streamed_block.txb_id);
-                        skip_block = 1; // Mark the block as invalid
+                        continue; // Skip empty transactions
+                    }
+
+                    if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
+                    {
+                        // Check if transaction content matches
+                        if (txCompare(&streamed_block.transactions[i], &tx_pool.transactions[j].tx) == 0)
+                        {
+                            log_info("Conteudo transação %s referenciada difere da transacao na pool. Bloco %s rejeitado",
+                                     streamed_block.transactions[i].tx_id, streamed_block.txb_id);
+                            skip_block = 1;
+                            break;
+                        }
+                        found = 1;
+                        tx_found_bitmap[i] = 1;
+
+                        // Keep a copy so we don't need another lock to process later
+                        memcpy(&temp_tx_array[i], &tx_pool.transactions[j].tx, sizeof(Transaction));
                         break;
                     }
-                    found = 1;
+                }
+
+                if (!found)
+                {
+                    log_info("Transação %s não encontrada na transactions pool. Bloco %s rejeitado",
+                             streamed_block.transactions[i].tx_id, streamed_block.txb_id);
+                    skip_block = 1;
                     break;
                 }
             }
-            if (!found)
+
+            // OPTIMIZATION 4: If the block is valid, remove transactions from pool in the same lock session
+            if (!skip_block)
             {
-                print_transaction_block(&streamed_block); // Print the block
-                log_info("Transação %s não encontrada na transactions pool. Bloco %s rejeitado", streamed_block.transactions[i].tx_id, streamed_block.txb_id);
-                skip_block = 1; // Mark the block as invalid
-                break;
+                log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
+                for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+                {
+                    for (size_t j = 0; j < *(tx_pool.size); j++)
+                    {
+                        if (tx_pool.transactions[j].filled == 0)
+                        {
+                            continue; // Skip empty transactions
+                        }
+
+                        if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
+                        {
+                            // Remove transaction from pool
+                            tx_pool.transactions[j].filled = 0;
+                            (*(tx_pool.count))--;
+                            break;
+                        }
+                    }
+                }
+
+                // OPTIMIZATION 5: Perform aging in the same critical section
+                log_info("Aging transactions na transactions pool");
+                for (size_t i = 0; i < *(tx_pool.size); i++)
+                {
+                    if (tx_pool.transactions[i].filled == 1)
+                    {
+                        if (tx_pool.transactions[i].age % 50 == 0)
+                        {
+                            tx_pool.transactions[i].tx.reward++;
+                        }
+                        tx_pool.transactions[i].age++;
+                    }
+                }
+
+                log_info("Transações restantes na transactions pool: %d", *(tx_pool.count));
             }
-            if (skip_block)
-            {
-                break; // Exit the `for` loop early if the block is invalid
-            }
+
+            sem_post(sem_tx_pool);
         }
 
+        // Handle the case where the block should be skipped
         if (skip_block)
         {
-            if (buffer)
-            {
-                free(buffer);
-            }
-            if (streamed_block.transactions)
-            {
-                free(streamed_block.transactions);
-            }
-            if (sem_post(sem_tx_pool) == -1)
-            {
-                sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-                perror("Erro ao desbloquear o semáforo");
-                break;
-            }
+            free(buffer);
+            free(streamed_block.transactions);
+            free(tx_found_bitmap); // Free dynamically allocated bitmap
 
-            // enviar informacao (de bloco invalido) para o statistics via message queue
+            // OPTIMIZATION 6: Prepare statistics message outside locks
             snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
 
-            // extrarir miner id (incluido no id do bloco)
+            // Extract miner ID
             int miner_id;
             if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
             {
@@ -547,10 +602,9 @@ void validator(int num)
             }
 
             new_msg.block_index = -1;
-
             new_msg.earned_amount = -1;
 
-            // enviar a mensagem para a message queue
+            // Send message to queue (no lock needed)
             if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
             {
                 log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
@@ -560,106 +614,55 @@ void validator(int num)
                 log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
             }
 
-            sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-            continue;             // Skip the rest of the `while (1)` loop iteration
+            continue;
         }
 
-        // print_transaction_pool(&tx_pool); // Print the transaction pool
-
-        log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
-        // remover transacoes da transactions pool
-        for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
-        {
-            // log_info("Removendo transação %s da transactions pool", streamed_block.transactions[i].tx_id);
-            for (size_t j = 0; j < *(tx_pool.size); j++)
-            {
-                if (tx_pool.transactions[j].filled == 0)
-                {
-                    continue; // Skip empty transactions
-                }
-                if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
-                {
-                    // Remover a transação da transactions pool
-                    tx_pool.transactions[j].filled = 0;
-                    (*(tx_pool.count))--;
-                    break;
-                }
-            }
-        }
-
-        // print_transaction_pool(&tx_pool); // Print the transaction pool
-
-        print_ledger(&ledgerInterface); // Print the ledger
-
-        // mecanismo de aging
-
-        log_info("Aging transactions na transactions pool");
-        for (size_t i = 0; i < *(tx_pool.size); i++)
-        {
-
-            if (tx_pool.transactions[i].filled == 1)
-
-            {
-                // log_info("Aging transação %s", tx_pool.transactions[i].tx.tx_id);
-                if (tx_pool.transactions[i].age % 50 == 0)
-                {
-                    tx_pool.transactions[i].tx.reward++;
-                }
-                tx_pool.transactions[i].age++;
-            }
-        }
-
-        // Desbloquear o semáforo após a escrita
-        if (sem_post(sem_tx_pool) == -1)
-        {
-            perror("Erro ao desbloquear o semáforo");
-            break;
-        }
-
-        log_info("Transações restantes na transactions pool: %d", *(tx_pool.count));
-        // print_transaction_pool(&tx_pool); // Print the transaction pool
-
-        // enviar thread id do block para o processo statisticas ...
-        {
-        }
-
-        // bloco aprovado: adicionar à ledger
-        // log_info("Bloco %s aprovado", streamed_block.txb_id);
-        log_info("DEBUG LEDGER: %d", *(ledgerInterface.count));
-
+        // Block is valid - prepare to add to ledger
+        // Compute hash outside the lock
         char hash[HASH_SIZE];
-        compute_sha256(&streamed_block, hash); // Compute the hash of the block
-
+        compute_sha256(&streamed_block, hash);
         log_info("Hash do bloco recebido: %s\n", hash);
 
-        // log_info("BLOCO STREAMED\n");
-        // print_transaction_block(&streamed_block); // Print the block
+        // OPTIMIZATION 7: Short and focused ledger update
+        sem_wait(sem_ledger);
 
-        strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].txb_id, streamed_block.txb_id);
-        strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].previous_block_hash, streamed_block.previous_block_hash);
-        *(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].timestamp) = streamed_block.timestamp;
-        *(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].nonce) = streamed_block.nonce;
+        // Double check that ledger state hasn't changed while we were processing
+        if (strncmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE) != 0)
+        {
+            log_info("Estado da ledger alterou-se durante processamento. Bloco %s rejeitado", streamed_block.txb_id);
+            sem_post(sem_ledger);
+            free(buffer);
+            free(streamed_block.transactions);
+            free(tx_found_bitmap); // Free dynamically allocated bitmap
+            continue;
+        }
 
-        // print_ledger(&ledgerInterface); // Print the ledger
+        // Add block to ledger
+        unsigned int next_index = *(ledgerInterface.last_block_index) + 1;
+
+        strcpy(ledgerInterface.blocks[next_index].txb_id, streamed_block.txb_id);
+        strcpy(ledgerInterface.blocks[next_index].previous_block_hash, streamed_block.previous_block_hash);
+        *(ledgerInterface.blocks[next_index].timestamp) = streamed_block.timestamp;
+        *(ledgerInterface.blocks[next_index].nonce) = streamed_block.nonce;
 
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
-            strcpy(ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].tx_id, streamed_block.transactions[i].tx_id);
-            ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].reward = streamed_block.transactions[i].reward;
-            ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].value = streamed_block.transactions[i].value;
-            ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1].transactions[i].timestamp = streamed_block.transactions[i].timestamp;
+            strcpy(ledgerInterface.blocks[next_index].transactions[i].tx_id, streamed_block.transactions[i].tx_id);
+            ledgerInterface.blocks[next_index].transactions[i].reward = streamed_block.transactions[i].reward;
+            ledgerInterface.blocks[next_index].transactions[i].value = streamed_block.transactions[i].value;
+            ledgerInterface.blocks[next_index].transactions[i].timestamp = streamed_block.transactions[i].timestamp;
         }
-        // log_info("DEBUG BLOCO:");
-        //  print_transaction_block_interface(&ledgerInterface.blocks[*(ledgerInterface.last_block_index) + 1]);
 
         strcpy(ledgerInterface.last_block_hash, hash);
         (*(ledgerInterface.count))++;
         (*(ledgerInterface.last_block_index))++;
 
-        // enviar informacao para o statistics via message queue
+        sem_post(sem_ledger);
+
+        // OPTIMIZATION 8: Prepare statistics message outside locks
         snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
 
-        // extrarir miner id (incluido no id do bloco)
+        // Extract miner ID
         int miner_id;
         if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
         {
@@ -671,17 +674,16 @@ void validator(int num)
             snprintf(new_msg.miner_id, sizeof(new_msg.miner_id), "-1");
         }
 
-        new_msg.block_index = *(ledgerInterface.last_block_index) + 1;
-
+        new_msg.block_index = next_index;
         new_msg.earned_amount = 0;
 
-        // calcular o valor total das transações do bloco
+        // Calculate total transaction rewards
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
             new_msg.earned_amount += streamed_block.transactions[i].reward;
         }
 
-        // enviar a mensagem para a message queue
+        // Send statistics message (no lock needed)
         if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
         {
             log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
@@ -691,23 +693,12 @@ void validator(int num)
             log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
         }
 
-        sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-
-        log_info("Hash do bloco recebido: %s\n", hash);
-
         log_info("Bloco aprovado:");
         print_transaction_block(&streamed_block);
 
-        // print_ledger(&ledgerInterface); // Print the ledger
-
-        if (buffer)
-        {
-            free(buffer);
-        }
-        if (streamed_block.transactions)
-        {
-            free(streamed_block.transactions);
-        }
+        free(buffer);
+        free(streamed_block.transactions);
+        free(tx_found_bitmap); // Free dynamically allocated bitmap
     }
 
     cleanup();

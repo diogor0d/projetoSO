@@ -499,7 +499,9 @@ int main()
     }
 
     // string para identificar o tipo de processo nos logs
-    TIPO_PROCESSO = "CONTROLLER";
+    char temp[20];
+    snprintf(temp, sizeof(temp), "CONTROLLER-%d", getpid());
+    TIPO_PROCESSO = strdup(temp);
 
     log_info("Processo Controller iniciado (PID: %d)", getpid());
     log_info("Configurações atuais:");

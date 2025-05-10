@@ -12,6 +12,7 @@
 #include <string.h>
 #include <signal.h>
 #include <errno.h>
+#include <unistd.h>
 #include "../include/Controller.h" // where STATISTICS_MQ and StatisticsMessage are defined
 
 static sem_t *sem_log_file = NULL;
@@ -133,7 +134,9 @@ void statistics()
         cleanup();
         return;
     }
-    TIPO_PROCESSO = "STATISTICS";
+    char temp[64];
+    snprintf(temp, sizeof(temp), "STATISTICS-%d", getpid());
+    TIPO_PROCESSO = strdup(temp);
 
     /* 1) Open the queue for reading */
     statistics_mq = mq_open(STATISTICS_MQ, O_RDONLY);

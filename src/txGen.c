@@ -315,7 +315,6 @@ int main(int argc, char *argv[])
             // sval = number of posts not yet consumed.
             // We want at most NUM_MINERS outstanding.
             int to_post = num_miners - sval;
-            to_post = (to_post <= 0) ? 1 : to_post;
             if (to_post <= 0)
             {
                 if (sem_post(sem_tx_pool) == -1)
