@@ -15,6 +15,7 @@
 #include <semaphore.h>
 #include <signal.h>
 #include <pthread.h>
+#include <stdbool.h>
 
 #include "../include/Controller.h"
 
@@ -264,10 +265,14 @@ int main(int argc, char *argv[])
     TransactionPoolInterface tx_pool_interface = interfaceTxPool(shm_base);
 
     printf("A iniciar a geração de transações...\n");
+    int last_signal_count = 0; // Track last transaction count when we signaled miners
+
     while (1)
     {
-        // Bloquear o semáforo antes de escrever na pool
+        // Sleep between transaction generations
+        usleep(sleep_time * 1000);
 
+        // Block on the semaphore before accessing the pool
         printf("A tentar bloquear o semáforo...\n");
         if (sem_wait(sem_tx_pool) == -1)
         {
@@ -276,64 +281,65 @@ int main(int argc, char *argv[])
             break;
         }
 
+        // Check if there's space in the pool
+        bool transaction_added = false;
         if (*tx_pool_interface.count < *tx_pool_interface.size)
         {
-
+            // Find an empty slot and add a transaction
             for (unsigned int i = 0; i < *tx_pool_interface.size; i++)
             {
                 if (tx_pool_interface.transactions[i].filled == 0) // verificação para assegurar que o lugar na lista está livre
                 {
-
                     PendingTransaction new_tx;
                     generate_transaction(&new_tx, reward);
                     tx_pool_interface.transactions[i] = new_tx;
                     (*tx_pool_interface.count)++;
                     printf("Transação Gerada > ID: %s, Reward: %d\n", new_tx.tx.tx_id, new_tx.tx.reward);
                     generated_transactions++;
+                    transaction_added = true;
                     break;
                 }
+            }
+
+            if (!transaction_added)
+            {
+                printf("Não foi possível adicionar transação à pool (todos os slots marcados como ocupados).\n");
             }
         }
         else
         {
-            printf("Transactions pool cheia. Aguardando...\n");
+            printf("Transactions pool cheia (%d/%d). Aguardando...\n",
+                   *tx_pool_interface.count, *tx_pool_interface.size);
         }
 
+        // Debug information
         int semval;
         sem_getvalue(sem_minerwork, &semval);
-
         printf("Semáforo minerwork: %d\n", semval);
-
-        // apresentar contagem da tx pool
         printf("Transações na transactions pool: %d\n", *tx_pool_interface.count);
         printf("Trasacoes geradas: %d\n", generated_transactions);
 
-        if (generated_transactions >= (int)transactions_per_block && generated_transactions % transactions_per_block == 0)
-        {
-            int sval;
-            sem_getvalue(sem_minerwork, &sval);
-            // sval = number of posts not yet consumed.
-            // We want at most NUM_MINERS outstanding.
-            int to_post = num_miners - sval;
-            if (to_post <= 0)
-            {
-                if (sem_post(sem_tx_pool) == -1)
-                {
-                    cleanup();
-                    perror("Erro ao desbloquear o semáforo");
-                    break;
-                }
+        // Signal miners if we have enough transactions
+        // Important: Signal miners even if the pool is full if we have new transactions
+        bool should_signal = false;
+        int current_count = *tx_pool_interface.count;
 
-                continue; // already enough “permits” queued
-            }
-            for (int i = 0; i < to_post; i++)
-            {
-                sem_post(sem_minerwork);
-            }
-            printf("Sinalizacao para miners trabalharem...\n");
+        // Signal when:
+        // 1. We have enough transactions for a block AND
+        // 2. Either:
+        //    a. We just added a transaction that crossed a transactions_per_block threshold OR
+        //    b. We haven't signaled at this count level yet AND we have enough transactions
+        //    c. The pool is full and miners might need to be woken up to process
+        if (current_count >= (int)transactions_per_block &&
+            (transaction_added ||
+             current_count != last_signal_count ||
+             current_count == *tx_pool_interface.size))
+        {
+            should_signal = true;
+            last_signal_count = current_count;
         }
 
-        // Desbloquear o semáforo após a escrita
+        // Release the lock before signaling
         if (sem_post(sem_tx_pool) == -1)
         {
             cleanup();
@@ -341,7 +347,34 @@ int main(int argc, char *argv[])
             break;
         }
 
-        usleep(sleep_time * 1000);
+        // Signal miners if needed - AFTER releasing tx_pool lock
+        if (should_signal)
+        {
+            int to_post = 0;
+            sem_getvalue(sem_minerwork, &semval);
+
+            // We want at most NUM_MINERS outstanding signals
+            to_post = num_miners - semval;
+
+            if (to_post > 0)
+            {
+                printf("Sinalizando para %d miners trabalharem (pool tem %d transações)...\n",
+                       to_post, current_count);
+
+                for (int i = 0; i < to_post; i++)
+                {
+                    if (sem_post(sem_minerwork) == -1)
+                    {
+                        perror("Erro ao sinalizar semáforo minerwork");
+                        // Not a fatal error, continue running
+                    }
+                }
+            }
+            else
+            {
+                printf("Já existem sinais suficientes para os miners (%d).\n", semval);
+            }
+        }
     }
 
     cleanup();
