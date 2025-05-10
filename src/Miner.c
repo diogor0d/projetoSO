@@ -304,7 +304,7 @@ void *miner_thread(void *arg)
     while (!stop_threads)
     {
 
-        // sem_wait(sem_minerwork); // Wait for the signal to start working
+        sem_wait(sem_minerwork); // Wait for the signal to start working
         //  pthread_testcancel(); // Check for cancellation reques
 
         // log_info("Transacoes na pool: %d", *tx_pool.count);
@@ -313,33 +313,18 @@ void *miner_thread(void *arg)
 
         pthread_testcancel(); // Explicitly check for cancellation
 
-        sem_wait(sem_minerwork); // Wait for the signal to start working
+        // sem_wait(sem_minerwork); // Wait for the signal to start working
 
         pthread_testcancel(); // Explicitly check for cancellation
 
-        struct timespec ts;
-        clock_gettime(CLOCK_REALTIME, &ts);
-
-        ts.tv_sec += 2;
-
-        if (sem_timedwait(sem_transactionspool, &ts) == -1)
-        {
-            if (errno == ETIMEDOUT)
-            {
-                log_info("Timeout waiting for transactionspool — skipping block creation.");
-                continue; // Don't access shared resource
-            }
-            else
-            {
-                perror("sem_timedwait");
-                pthread_exit(NULL);
-            }
-        }
-        sem_wait(sem_ledger); // desbloquear o semáforo para o ledger
+        sem_wait(sem_transactionspool); // bloquear o semáforo para a transactions pool
+        sem_wait(sem_ledger);           // desbloquear o semáforo para o ledger
 
         pthread_testcancel(); // Explicitly check for cancellation
 
         // apesar da redundancia desta condição, ela é efetuada para garantir a clareza da operação de cada thread
+
+        log_info("DEBUG: %d, %d, %d", *tx_pool.count, *(ledgerInterface.count), *(ledgerInterface.count) < BLOCKCHAIN_BLOCKS);
         if (*tx_pool.count >= (unsigned int)TRANSACTIONS_PER_BLOCK && *(ledgerInterface.count) > 0 && *(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
         {
 
@@ -349,7 +334,6 @@ void *miner_thread(void *arg)
 
             block_number++;
 
-            // Select TRANSACTIONS_PER_BLOCK transactions with the least reward
             Transaction *selected_transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
             if (selected_transactions == NULL)
             {
@@ -494,7 +478,6 @@ void *miner_thread(void *arg)
         else if (*ledgerInterface.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
             log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
-            // sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
             sem_post(sem_transactionspool); // desbloquear o semáforo para a transactions pool
             sem_post(sem_ledger);           // desbloquear o semáforo para o ledger
             break;                          // Exit the loop when the ledger is full
@@ -680,8 +663,6 @@ void miner()
             return;
         }
     }
-
-    log_info("Todas as miner threads terminaram.");
 
     // esperar pela thread de tratamento de sinais
     pthread_join(signal_thread, NULL);

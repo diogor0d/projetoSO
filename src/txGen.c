@@ -267,8 +267,11 @@ int main(int argc, char *argv[])
     while (1)
     {
         // Bloquear o semáforo antes de escrever na pool
+
+        printf("A tentar bloquear o semáforo...\n");
         if (sem_wait(sem_tx_pool) == -1)
         {
+            cleanup();
             perror("Erro ao bloquear o semáforo");
             break;
         }
@@ -296,28 +299,45 @@ int main(int argc, char *argv[])
             printf("Transactions pool cheia. Aguardando...\n");
         }
 
+        int semval;
+        sem_getvalue(sem_minerwork, &semval);
+
+        printf("Semáforo minerwork: %d\n", semval);
+
         // apresentar contagem da tx pool
         printf("Transações na transactions pool: %d\n", *tx_pool_interface.count);
         printf("Trasacoes geradas: %d\n", generated_transactions);
 
-        if (generated_transactions > (int)transactions_per_block && generated_transactions % transactions_per_block == 0)
+        if (generated_transactions >= (int)transactions_per_block && generated_transactions % transactions_per_block == 0)
         {
             int sval;
             sem_getvalue(sem_minerwork, &sval);
             // sval = number of posts not yet consumed.
             // We want at most NUM_MINERS outstanding.
             int to_post = num_miners - sval;
+            to_post = (to_post <= 0) ? 1 : to_post;
             if (to_post <= 0)
+            {
+                if (sem_post(sem_tx_pool) == -1)
+                {
+                    cleanup();
+                    perror("Erro ao desbloquear o semáforo");
+                    break;
+                }
+
                 continue; // already enough “permits” queued
+            }
             for (int i = 0; i < to_post; i++)
             {
                 sem_post(sem_minerwork);
             }
+            printf("Sinalizacao para miners trabalharem...\n");
         }
 
         // Desbloquear o semáforo após a escrita
         if (sem_post(sem_tx_pool) == -1)
         {
+            cleanup();
             perror("Erro ao desbloquear o semáforo");
             break;
         }

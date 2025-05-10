@@ -110,6 +110,7 @@ typedef struct
     unsigned int nonce;
     Transaction *transactions;
 } TransactionBlock;
+
 #pragma pack(pop)
 
 // Esta estrutura representa um block instanciado
@@ -131,6 +132,16 @@ typedef struct
     unsigned int *count;               // Pointer to the count of blocks
     TransactionBlockInterface *blocks; // Pointer to the array of blocks in shared memory
 } LedgerInterface;
+
+#pragma pack(push, 1)
+typedef struct
+{
+    char txb_id[TXB_ID_LEN]; // Block ID
+    char miner_id[7];        // Miner ID (assumido n exceder 6 digitos);
+    int block_index;         // indice na ledger do block aprovado (-1 se um bloco foi rejeitado)
+    int earned_amount;       // Number of transactions in the block (-1 se o bloco foi rejeitado)
+} StatisticsMessage;
+#pragma pack(pop)
 
 // Inline function to compute the size of a TransactionBlock
 static inline size_t

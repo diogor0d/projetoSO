@@ -190,6 +190,19 @@ void cleanup()
         }
     }
 
+    // fechar message queue
+    if (statistics_mq != -1)
+    {
+        if (mq_close(statistics_mq) == -1)
+        {
+            log_info("Erro ao fechar message queue %s", STATISTICS_MQ);
+        }
+        else
+        {
+            log_info("%s fechado com sucesso", STATISTICS_MQ);
+        }
+    }
+
     // Close the log file
     if (log_file)
     {
@@ -328,7 +341,7 @@ void validator(int num)
     }
     log_info("Pipe de validação aberto com sucesso.");
 
-    statistics_mq = mq_open(STATISTICS_MQ, O_WRONLY);
+    statistics_mq = mq_open(STATISTICS_MQ, O_WRONLY | O_NONBLOCK);
     if (statistics_mq == (mqd_t)-1)
     {
         log_info("Erro ao abrir a message queue %s", STATISTICS_MQ);
@@ -361,7 +374,7 @@ void validator(int num)
 
         log_info("Hash do bloco origem: %s\n", r.hash);
 
-        print_transaction_block(&nemesis_block); // Print the block
+        // print_transaction_block(&nemesis_block); // Print the block
 
         *(ledgerInterface.count) = 1;
         *(ledgerInterface.blocks[0].txb_id) = 'z';
@@ -442,34 +455,32 @@ void validator(int num)
 
         log_info("Bloco recebido: %s\n", streamed_block.txb_id);
 
+        StatisticsMessage new_msg;
+        int skip_block = 0; // Flag to indicate whether to skip the block
+
         if (!verify_nonce(&streamed_block))
         {
-            free(buffer);
-            free(streamed_block.transactions);
             sem_post(sem_ledger); // desbloquear o semáforo para o ledger
             log_info("Bloco recebido com nonce inválido\n");
-            continue; // avançar para a receção de um proximo bloco
+            skip_block = 1; // avançar para a receção de um proximo bloco
         }
 
         if (strncmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE) != 0)
         {
             log_info("Bloco recebido com hash anterior inválida - Bloco %s rejeitado", streamed_block.txb_id);
-            free(buffer);
-            free(streamed_block.transactions);
             sem_post(sem_ledger); // desbloquear o semáforo para o ledger
-            continue;             // avançar para a receção de um proximo bloco
+            skip_block = 1;       // avançar para a receção de um proximo bloco
         }
 
-        print_transaction_pool(&tx_pool); // Print the transaction pool
+        // print_transaction_pool(&tx_pool); // Print the transaction pool
 
         // verificar se todas as transacoes do bloco se encontram na transactions pool
         if (sem_wait(sem_tx_pool) == -1)
         {
-            perror("Erro ao bloquear o semáforo");
+            log_info("Erro ao bloquear o semáforo");
             sem_post(sem_ledger); // desbloquear o semáforo para o ledger
             break;
         }
-        int skip_block = 0; // Flag to indicate whether to skip the block
 
         log_info("Verificando transações do bloco %s", streamed_block.txb_id);
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
@@ -492,6 +503,7 @@ void validator(int num)
             }
             if (!found)
             {
+                print_transaction_block(&streamed_block); // Print the block
                 log_info("Transação %s não encontrada na transactions pool. Bloco %s rejeitado", streamed_block.transactions[i].tx_id, streamed_block.txb_id);
                 skip_block = 1; // Mark the block as invalid
                 break;
@@ -519,11 +531,40 @@ void validator(int num)
                 break;
             }
 
+            // enviar informacao (de bloco invalido) para o statistics via message queue
+            snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
+
+            // extrarir miner id (incluido no id do bloco)
+            int miner_id;
+            if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
+            {
+                snprintf(new_msg.miner_id, sizeof(new_msg.miner_id), "%d", miner_id);
+            }
+            else
+            {
+                log_info("Erro ao extrair miner_id de %s", streamed_block.txb_id);
+                snprintf(new_msg.miner_id, sizeof(new_msg.miner_id), "-1");
+            }
+
+            new_msg.block_index = -1;
+
+            new_msg.earned_amount = -1;
+
+            // enviar a mensagem para a message queue
+            if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
+            {
+                log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
+            }
+            else
+            {
+                log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
+            }
+
             sem_post(sem_ledger); // desbloquear o semáforo para o ledger
             continue;             // Skip the rest of the `while (1)` loop iteration
         }
 
-        print_transaction_pool(&tx_pool); // Print the transaction pool
+        // print_transaction_pool(&tx_pool); // Print the transaction pool
 
         log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
         // remover transacoes da transactions pool
@@ -546,7 +587,7 @@ void validator(int num)
             }
         }
 
-        print_transaction_pool(&tx_pool); // Print the transaction pool
+        // print_transaction_pool(&tx_pool); // Print the transaction pool
 
         print_ledger(&ledgerInterface); // Print the ledger
 
@@ -583,7 +624,7 @@ void validator(int num)
         }
 
         // bloco aprovado: adicionar à ledger
-        log_info("Bloco %s aprovado", streamed_block.txb_id);
+        // log_info("Bloco %s aprovado", streamed_block.txb_id);
         log_info("DEBUG LEDGER: %d", *(ledgerInterface.count));
 
         char hash[HASH_SIZE];
@@ -614,6 +655,42 @@ void validator(int num)
         strcpy(ledgerInterface.last_block_hash, hash);
         (*(ledgerInterface.count))++;
         (*(ledgerInterface.last_block_index))++;
+
+        // enviar informacao para o statistics via message queue
+        snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
+
+        // extrarir miner id (incluido no id do bloco)
+        int miner_id;
+        if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
+        {
+            snprintf(new_msg.miner_id, sizeof(new_msg.miner_id), "%d", miner_id);
+        }
+        else
+        {
+            log_info("Erro ao extrair miner_id de %s", streamed_block.txb_id);
+            snprintf(new_msg.miner_id, sizeof(new_msg.miner_id), "-1");
+        }
+
+        new_msg.block_index = *(ledgerInterface.last_block_index) + 1;
+
+        new_msg.earned_amount = 0;
+
+        // calcular o valor total das transações do bloco
+        for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
+        {
+            new_msg.earned_amount += streamed_block.transactions[i].reward;
+        }
+
+        // enviar a mensagem para a message queue
+        if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
+        {
+            log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
+        }
+        else
+        {
+            log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
+        }
+
         sem_post(sem_ledger); // desbloquear o semáforo para o ledger
 
         log_info("Hash do bloco recebido: %s\n", hash);
