@@ -470,7 +470,7 @@ void *miner_thread(void *arg)
     }
 
     log_info("Miner thread %d terminou.", thread_id);
-    pthread_exit(NULL);
+    return NULL;
 }
 
 void miner()
@@ -490,7 +490,7 @@ void miner()
         return;
     }
     char temp[20];
-    snprintf(temp, sizeof(temp), "MINER-%d", getpid());
+    snprintf(temp, sizeof(temp), "MINER [%d]", getpid());
     TIPO_PROCESSO = strdup(temp);
 
     // Abrir o semaforo para transactions pool

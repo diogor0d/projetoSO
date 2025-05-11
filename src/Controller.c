@@ -26,6 +26,7 @@
 #include "../include/Miner.h"
 #include "../include/Validator.h"
 #include "../include/Statistics.h"
+#include "../include/SHMManagement.h"
 
 int NUM_MINERS;
 size_t TRANSACTIONS_PER_BLOCK;
@@ -47,6 +48,12 @@ int shm_transactionspool_size, shm_ledger_size;
 // mesage queue
 mqd_t statistics_mq;
 
+// thread gestao
+pthread_t validator_launcher_thread;
+static int validator_thread_created = 0;
+static volatile int stop_thread = 0;
+pid_t validators[2]; // validators extra
+
 // declarar array para armazenamento dos PIDs dos processos filhos
 pid_t pids[3];
 #define NUM_CHILDREN 3
@@ -55,6 +62,7 @@ pid_t pids[3];
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
 static char *TIPO_PROCESSO = NULL;
+static int cleanup_called = 0;
 
 FILE *open_log_file()
 {
@@ -166,7 +174,75 @@ void parse_config()
 
 static void cleanup()
 {
+    if (cleanup_called)
+        return;
+    cleanup_called = 1;
+
     log_info("A libertar recursos...");
+
+    // terminar validators adicionais
+    log_info("A sinalizar validators adicionais...");
+    for (int i = 0; i < 2; i++)
+    {
+        if (validators[i] > 0)
+        {
+            if (kill(validators[i], SIGTERM) == -1)
+            {
+                log_info("Erro ao enviar SIGTERM para o validator %d", validators[i]);
+            }
+            else
+            {
+                log_info("Enviado SIGTERM para o validator %d com sucesso", validators[i]);
+            }
+        }
+    }
+
+    // agurdar pelo fim dos validators
+    for (int i = 0; i < 2; i++)
+    {
+        if (validators[i] > 0)
+        {
+            int status;
+            if (waitpid(validators[i], &status, 0) == -1)
+            {
+                log_info("Erro ao esperar pelo validator %d", validators[i]);
+            }
+            else
+            {
+                log_info("Validator %d PID %d terminou.", i, validators[i]);
+            }
+        }
+    }
+
+    // terminar thread de gestao de validators
+    if (validator_thread_created)
+    {
+        // First try clean termination
+        stop_thread = 1;
+
+        // Give thread a moment to exit normally
+        struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
+        nanosleep(&ts, NULL);
+
+        // Then force cancellation if needed
+        pthread_cancel(validator_launcher_thread);
+
+        // Join with timeout to avoid hanging
+        struct timespec join_timeout;
+        clock_gettime(CLOCK_REALTIME, &join_timeout);
+        join_timeout.tv_sec += 2; // 2 second timeout
+
+        int join_result = pthread_join(validator_launcher_thread, NULL);
+        if (join_result == 0)
+        {
+            log_info("Thread de gestao de validators terminada com sucesso");
+        }
+        else
+        {
+            log_info("Erro ao aguardar pelo término da thread de gestao: %d", join_result);
+        }
+        validator_thread_created = 0;
+    }
 
     // Terminate child processes
     log_info("A sinalizar processos filhos...");
@@ -255,16 +331,6 @@ static void cleanup()
     else
     {
         log_info("%s terminado com sucesso", SHM_LEDGER);
-    }
-
-    // Unmap transactions pool shared memory
-    if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
-    {
-        log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
-    }
-    else
-    {
-        log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
     }
 
     // shm condvar
@@ -461,6 +527,126 @@ void sigint(int signum)
     exit(EXIT_SUCCESS);
 }
 
+void *validator_launcher(void *arg)
+{
+    // Set cancellation state
+    pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
+    pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
+
+    // bloquear todos os sinais nesta thread
+    sigset_t set;
+    sigfillset(&set);
+    pthread_sigmask(SIG_BLOCK, &set, NULL);
+
+    log_info("Thread de gestão de validadores em execução...");
+
+    // Use a controlled loop instead of infinite loop
+    while (!stop_thread)
+    {
+        TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
+
+        float occupancy = (float)pool->count / TRANSACTION_POOL_SIZE;
+        log_info("Ocupação da transactions pool: %.2f%%", occupancy * 100);
+
+        if (occupancy >= 0.6)
+        {
+            if (validators[0] == 0)
+            {
+                // criar o processo de validação
+                validators[0] = fork();
+                if (validators[0] == 0)
+                {
+                    // reset na mask de sinais para que o o validator n seja afetado pelo bloqueio de sinais da thread
+                    sigset_t empty_set;
+                    sigemptyset(&empty_set);
+                    sigprocmask(SIG_SETMASK, &empty_set, NULL);
+                    // processo filho
+                    validator(2);
+                    exit(EXIT_SUCCESS);
+                }
+                else if (validators[0] < 0)
+                {
+                    log_info("Erro ao criar o processo Validator 2");
+                }
+                else
+                {
+                    log_info("Processo Validator criado com PID %d", validators[0]);
+                }
+            }
+            if (occupancy > 0.8)
+            {
+                if (validators[1] == 0)
+                {
+                    validators[1] = fork();
+                    if (validators[1] == 0)
+                    {
+                        // reset na mask de sinais para que o o validator n seja afetado pelo bloqueio de sinais da thread
+                        sigset_t empty_set;
+                        sigemptyset(&empty_set);
+                        sigprocmask(SIG_SETMASK, &empty_set, NULL);
+                        // processo filho
+                        validator(3);
+                        exit(EXIT_SUCCESS);
+                    }
+                    else if (validators[1] < 0)
+                    {
+                        log_info("Erro ao criar o processo Validator 3");
+                    }
+                    else
+                    {
+                        log_info("Processo Validator criado com PID %d", validators[1]);
+                    }
+                }
+            }
+        }
+        else if (occupancy < 0.4)
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                if (validators[i] > 0)
+                {
+                    log_info("A terminar o processo Validator com PID %d", validators[i]);
+                    if (kill(validators[i], SIGTERM) == -1)
+                    {
+                        log_info("Erro ao enviar SIGTERM para o processo Validator com PID %d", validators[i]);
+                    }
+                    else
+                    {
+                        log_info("Enviado SIGTERM para o Validator %d com PID %d com sucesso", i, validators[i]);
+                        int status;
+                        if (waitpid(validators[i], &status, WNOHANG) > 0)
+                        {
+                            log_info("Validator %d terminated immediately with status %d", i,
+                                     WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+                            validators[i] = 0;
+                        }
+                    }
+                }
+            }
+
+            // Then check for any remaining zombies
+            for (int i = 0; i < 2; i++)
+            {
+                if (validators[i] > 0)
+                {
+                    int status;
+                    pid_t result = waitpid(validators[i], &status, WNOHANG);
+                    if (result > 0)
+                    {
+                        log_info("Validator %d with PID %d terminated", i, validators[i]);
+                        validators[i] = 0;
+                    }
+                }
+            }
+        }
+
+        sleep(1);
+        pthread_testcancel();
+    }
+
+    return NULL;
+}
+
 int main()
 {
     for (int i = 1; i < NSIG; i++) // NSIG is the total number of signals
@@ -500,7 +686,7 @@ int main()
 
     // string para identificar o tipo de processo nos logs
     char temp[20];
-    snprintf(temp, sizeof(temp), "CONTROLLER-%d", getpid());
+    snprintf(temp, sizeof(temp), "CONTROLLER [%d]", getpid());
     TIPO_PROCESSO = strdup(temp);
 
     log_info("Processo Controller iniciado (PID: %d)", getpid());
@@ -576,8 +762,9 @@ int main()
         exit(EXIT_FAILURE);
     }
     log_info("%s mapeada com sucesso", SHM_TRANSACTIONS_POOL);
-    memset(shm_transactionspool_base, 0, shm_transactionspool_size);                                     // Inicializar a memória partilhada para a transactions pool
-    ((TransactionPoolSHM *)shm_transactionspool_base)->size = TRANSACTION_POOL_SIZE;                     // parametros uteis para txgen
+    memset(shm_transactionspool_base, 0, shm_transactionspool_size); // Inicializar a memória partilhada para a transactions pool
+    ((TransactionPoolSHM *)shm_transactionspool_base)
+        ->size = TRANSACTION_POOL_SIZE;                                                                  // parametros uteis para txgen
     ((TransactionPoolSHM *)shm_transactionspool_base)->num_miners = NUM_MINERS;                          // parametros uteis para txgen
     ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_per_block = TRANSACTIONS_PER_BLOCK;  // parametros uteis para txgen
     ((TransactionPoolSHM *)shm_transactionspool_base)->transactions_offset = sizeof(TransactionPoolSHM); // Inicializar o contador de transações
@@ -769,8 +956,41 @@ int main()
         exit(EXIT_SUCCESS);
     }
 
+    // thread the gestao de validators
+    if (pthread_create(&validator_launcher_thread, NULL, validator_launcher, NULL) != 0)
+    {
+        log_info("Erro ao criar a thread de gestão de validators");
+        cleanup();
+        exit(EXIT_FAILURE);
+    }
+    else
+    {
+        log_info("Thread de gestão de validators criada com sucesso.");
+        validator_thread_created = 1;
+    }
+
     // Voltar a tratar os sinais de interrupção e paragem
     signal(SIGINT, sigint);
+
+    // esperar pelo fim da thread de gestao de validators
+    pthread_join(validator_launcher_thread, NULL);
+
+    // esperar pelos validators adicionais
+    for (int i = 0; i < 2; i++)
+    {
+        if (validators[i] > 0)
+        {
+            int status;
+            if (waitpid(validators[i], &status, 0) == -1)
+            {
+                log_info("Erro ao esperar pelo processo Validator com PID %d", validators[i]);
+            }
+            else
+            {
+                log_info("Processo Validator com PID %d terminou.", validators[i]);
+            }
+        }
+    }
 
     // Controlador aguarda pelo término de todos os processos filhos
     for (int i = 0; i < 3; i++)

@@ -333,7 +333,7 @@ int main(int argc, char *argv[])
         if (current_count >= (int)transactions_per_block &&
             (transaction_added ||
              current_count != last_signal_count ||
-             current_count == *tx_pool_interface.size))
+             (unsigned int)current_count == *tx_pool_interface.size))
         {
             should_signal = true;
             last_signal_count = current_count;

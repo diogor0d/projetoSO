@@ -135,7 +135,7 @@ void statistics()
         return;
     }
     char temp[64];
-    snprintf(temp, sizeof(temp), "STATISTICS-%d", getpid());
+    snprintf(temp, sizeof(temp), "STATISTICS [%d]", getpid());
     TIPO_PROCESSO = strdup(temp);
 
     /* 1) Open the queue for reading */

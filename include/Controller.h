@@ -76,8 +76,10 @@ typedef struct
 // estrutura local para facilitar a logica de acesso à transactions pool na shared memory
 typedef struct
 {
-    unsigned int *size;               // Pointer to the size field in shared memory
-    unsigned int *count;              // Pointer to the count field in shared memory
+    unsigned int *size;  // Pointer to the size field in shared memory
+    unsigned int *count; // Pointer to the count field in shared memory
+    unsigned int *num_miners;
+    unsigned int *transactions_per_block;
     PendingTransaction *transactions; // Pointer to the array of transactions in shared memory
 } TransactionPoolInterface;
 

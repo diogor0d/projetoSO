@@ -275,7 +275,7 @@ void validator(int num)
         return;
     }
     char buffer[20];
-    snprintf(buffer, sizeof(buffer), "VALIDATOR-%d-%d", num, getpid());
+    snprintf(buffer, sizeof(buffer), "VALIDATOR %d [%d]", num, getpid());
     TIPO_PROCESSO = strdup(buffer);
 
     // abrir a memoria partilhada para a transactions pool (já existente)
