@@ -372,7 +372,7 @@ void validator(int num)
             exit(1);
         }
 
-        log_info("Hash do bloco origem: %s\n", r.hash);
+        log_info("Hash do bloco origem: %s", r.hash);
 
         // print_transaction_block(&nemesis_block); // Print the block
 
@@ -389,7 +389,7 @@ void validator(int num)
         // sem_post(sem_ledger); // desbloquear o semáforo para o ledger
 
         free(nemesis_block.transactions); // Free the allocated memory for transactions
-        log_info("Hash inicial (Bloco origem): %s\n", ledgerInterface.last_block_hash);
+        log_info("Hash inicial (Bloco origem): %s", ledgerInterface.last_block_hash);
     }
 
     sem_post(sem_ledger); // desbloquear o semáforo para o ledger

@@ -45,6 +45,9 @@ static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclose
 
 int shm_transactionspool_size, shm_ledger_size;
 
+// para apresentar a ledger no sigusr1
+LedgerInterface ledger;
+
 // mesage queue
 mqd_t statistics_mq;
 
@@ -495,21 +498,21 @@ static void cleanup()
     {
         if (sem_close(sem_log_file) == -1)
         {
-            printf("\nController: Erro ao fechar semáforo %s\n", SEM_LOG_FILE);
+            printf("\n\033[33mController: Erro ao fechar semáforo %s\n", SEM_LOG_FILE);
         }
         else
         {
-            printf("\nController: %s fechado com sucesso\n", SEM_LOG_FILE);
+            printf("\n\033[33mController: %s fechado com sucesso\n", SEM_LOG_FILE);
         }
     }
     // log file
     if (sem_unlink(SEM_LOG_FILE) == -1)
     {
-        printf("\nController: Erro ao terminar semáforo %s\n", SEM_LOG_FILE);
+        printf("\n\033[33mController: Erro ao terminar semáforo %s\n", SEM_LOG_FILE);
     }
     else
     {
-        printf("Controller: %s terminado com sucesso\n", SEM_LOG_FILE);
+        printf("\033[33mController: %s terminado com sucesso\n", SEM_LOG_FILE);
     }
 
     // Close the log file
@@ -525,6 +528,21 @@ void sigint(int signum)
     log_info("SIGINT recebido... Paragem de execução em curso...");
     cleanup();
     exit(EXIT_SUCCESS);
+}
+
+static void handle_sigusr1(int signum)
+{
+    (void)signum;
+    log_info("SIGUSR1 recebido - ação especial a executar");
+
+    sem_wait(sem_ledger);
+    print_ledger(&ledger);
+    sem_post(sem_ledger);
+
+    // Your custom logic here, for example:
+    // - Dump statistics to log
+    // - Change program state
+    // - Trigger some reporting function
 }
 
 void *validator_launcher(void *arg)
@@ -546,7 +564,7 @@ void *validator_launcher(void *arg)
         TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
 
         float occupancy = (float)pool->count / TRANSACTION_POOL_SIZE;
-        log_info("Ocupação da transactions pool: %.2f%%", occupancy * 100);
+        // log_info("Ocupação da transactions pool: %.2f%%", occupancy * 100);
 
         if (occupancy >= 0.6)
         {
@@ -692,7 +710,7 @@ int main()
     log_info("Processo Controller iniciado (PID: %d)", getpid());
     log_info("Configurações atuais:");
     log_info("NUM_MINERS: %d", NUM_MINERS);
-    log_info("TRANSACTION_POOL_SIZE: %d\n", TRANSACTION_POOL_SIZE);
+    log_info("TRANSACTION_POOL_SIZE: %d", TRANSACTION_POOL_SIZE);
     log_info("TRANSACTIONS_PER_BLOCK: %d", TRANSACTIONS_PER_BLOCK);
     log_info("BLOCKCHAIN_BLOCKS: %d", BLOCKCHAIN_BLOCKS);
 
@@ -799,25 +817,9 @@ int main()
     memset(shm_ledger_base, 0, shm_ledger_size);                       // Inicializar a memória partilhada para o ledger
     ((LedgerSHM *)shm_ledger_base)->num_blocks = BLOCKCHAIN_BLOCKS;    // Inicializar o número de blocos no ledger
     ((LedgerSHM *)shm_ledger_base)->blocks_offset = sizeof(LedgerSHM); // Inicializar o offset para as transações
-    log_info("Memória partilhada para o ledger inicializada com sucesso");
+    log_info("Memória partilhada para a ledger inicializada com sucesso");
 
-    //  desmapear a memoria partilhada do processo atual (já que não é necessário)
-    if (munmap(shm_ledger_base, shm_ledger_size) == -1)
-    {
-        log_info("Erro ao desmapear SHM_LEDGER");
-    }
-    else
-    {
-        log_info("Desmapeado %s com sucesso", SHM_LEDGER);
-    }
-    if (close(shm_ledger_fd) == -1)
-    {
-        log_info("Erro ao fechar SHM_LEDGER");
-    }
-    else
-    {
-        log_info("Fechado %s com sucesso", SHM_LEDGER);
-    }
+    ledger = interfaceLedger(shm_ledger_base);
 
     // inicializacao da memoria partilhada para a variavel de condicao para funcionamento dos miners
     shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_CREAT | O_RDWR, 0666);
@@ -971,6 +973,7 @@ int main()
 
     // Voltar a tratar os sinais de interrupção e paragem
     signal(SIGINT, sigint);
+    signal(SIGUSR1, handle_sigusr1);
 
     // esperar pelo fim da thread de gestao de validators
     pthread_join(validator_launcher_thread, NULL);

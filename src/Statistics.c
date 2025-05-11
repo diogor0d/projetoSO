@@ -116,6 +116,17 @@ static void sigterm(int signum)
     exit(EXIT_SUCCESS);
 }
 
+static void handle_sigusr1(int signum)
+{
+    (void)signum; // Silence unused parameter warning
+    log_info("SIGUSR1 recebido - ação especial a executar");
+
+    // Your custom logic here, for example:
+    // - Dump statistics to log
+    // - Change program state
+    // - Trigger some reporting function
+}
+
 void statistics()
 {
     // Abrir o semaforo para logs (já existente)
@@ -165,10 +176,11 @@ void statistics()
         exit(EXIT_FAILURE);
     }
 
-    log_info("A receber mensagens da message queue '%s' (msgsize=%ld)...\n",
+    log_info("A receber mensagens da message queue '%s' (msgsize=%ld)...",
              STATISTICS_MQ, attr.mq_msgsize);
 
     signal(SIGTERM, sigterm); // processar sigterm após inicio seguro
+    signal(SIGUSR1, handle_sigusr1);
 
     /* 4) Loop receiving */
     while (1)
