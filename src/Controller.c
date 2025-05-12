@@ -522,7 +522,7 @@ static void cleanup()
     }
 }
 
-void sigint(int signum)
+static void sigint(int signum)
 {
     (void)signum; // ignorar o sinal, não é necessário para o tratamento
     log_info("SIGINT recebido... Paragem de execução em curso...");
@@ -533,16 +533,10 @@ void sigint(int signum)
 static void handle_sigusr1(int signum)
 {
     (void)signum;
-    log_info("SIGUSR1 recebido - ação especial a executar");
-
+    log_info("SIGUSR1 recebido - A efetuar ledger dump...");
     sem_wait(sem_ledger);
     print_ledger(&ledger);
     sem_post(sem_ledger);
-
-    // Your custom logic here, for example:
-    // - Dump statistics to log
-    // - Change program state
-    // - Trigger some reporting function
 }
 
 void *validator_launcher(void *arg)
@@ -570,6 +564,7 @@ void *validator_launcher(void *arg)
         {
             if (validators[0] == 0)
             {
+                log_info("Transactions pool ocupada a 60%%, a criar o processo de validação.");
                 // criar o processo de validação
                 validators[0] = fork();
                 if (validators[0] == 0)
@@ -595,6 +590,7 @@ void *validator_launcher(void *arg)
             {
                 if (validators[1] == 0)
                 {
+                    log_info("Transactions pool ocupada a 80%%, a criar o processo de validação.");
                     validators[1] = fork();
                     if (validators[1] == 0)
                     {
@@ -623,7 +619,7 @@ void *validator_launcher(void *arg)
             {
                 if (validators[i] > 0)
                 {
-                    log_info("A terminar o processo Validator com PID %d", validators[i]);
+                    log_info("Ocupação da Transaction Pool a 40%% - A terminar o processo Validator com PID %d", validators[i]);
                     if (kill(validators[i], SIGTERM) == -1)
                     {
                         log_info("Erro ao enviar SIGTERM para o processo Validator com PID %d", validators[i]);

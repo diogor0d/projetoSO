@@ -139,7 +139,7 @@ void print_ledger(const LedgerInterface *ledger)
     printf("Number of Blocks: %u\n", *ledger->num_blocks);
     printf("Count: %u\n", *ledger->count);
 
-    for (unsigned int i = 0; i < *ledger->num_blocks; i++)
+    for (unsigned int i = 0; i < *ledger->count; i++)
     {
         TransactionBlockInterface block = ledger->blocks[i];
         if (strcmp(block.txb_id, "") == 0)

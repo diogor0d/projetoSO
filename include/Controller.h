@@ -142,6 +142,7 @@ typedef struct
     char miner_id[7];        // Miner ID (assumido n exceder 6 digitos);
     int block_index;         // indice na ledger do block aprovado (-1 se um bloco foi rejeitado)
     int earned_amount;       // Number of transactions in the block (-1 se o bloco foi rejeitado)
+    time_t timestamp;        // Timestamp of the block
 } StatisticsMessage;
 #pragma pack(pop)
 

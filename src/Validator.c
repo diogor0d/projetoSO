@@ -18,6 +18,7 @@
 #include <semaphore.h>
 #include <pthread.h>
 #include <mqueue.h>
+#include <errno.h>
 
 #include "../include/Controller.h"
 #include "../include/PoW/pow.h"
@@ -372,8 +373,6 @@ void validator(int num)
             exit(1);
         }
 
-        log_info("Hash do bloco origem: %s", r.hash);
-
         // print_transaction_block(&nemesis_block); // Print the block
 
         *(ledgerInterface.count) = 1;
@@ -657,6 +656,8 @@ void validator(int num)
         (*(ledgerInterface.count))++;
         (*(ledgerInterface.last_block_index))++;
 
+        new_msg.timestamp = time(NULL);
+
         sem_post(sem_ledger);
 
         // OPTIMIZATION 8: Prepare statistics message outside locks
@@ -686,7 +687,8 @@ void validator(int num)
         // Send statistics message (no lock needed)
         if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
         {
-            log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
+            log_info("Erro ao enviar mensagem para a message queue %s: %s (errno=%d)",
+                     STATISTICS_MQ, strerror(errno), errno);
         }
         else
         {
