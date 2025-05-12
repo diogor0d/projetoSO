@@ -4,7 +4,7 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
-#define _GNU_SOURCE // para o vasprintf
+#define _GNU_SOURCE // para o vasprintf e strcasestr
 #include <stdarg.h>
 #include <mqueue.h>
 #include <stdio.h>
@@ -21,7 +21,8 @@
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char *TIPO_PROCESSO = NULL;
+static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
 static int shm_ledger_fd = -1;
 static void *shm_ledger_base = NULL;
@@ -42,17 +43,16 @@ typedef struct
     int blocks_in_chain;        // blocos na blockchain
 } Statistics;
 
-Statistics stats;
+Statistics stats = {0};
 
 static void log_info(const char *format, ...)
 {
-
     char *log_message;
     va_list args;
 
     va_start(args, format);
 
-    // formatar a string
+    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -62,27 +62,42 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // bloquear o semáforo
-    sem_wait(sem_log_file);
-
-    // obter o tempo atual
+    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer para "dd/mm/yyyy hh:mm:ss"
+    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Escrever a mensagem de log no ficheiro e no stdout
+    // Determine color based on content (outside of critical section)
+    const char *color_code = "\033[0m"; // Default: no color
+
+    if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
+    {
+        color_code = "\033[31m"; // Red
+    }
+    else if (strcasestr(log_message, "sucesso") != NULL || strcasestr(log_message, "execução") != NULL || strcasestr(log_message, "iniciado") != NULL)
+    {
+        color_code = "\033[32m"; // Green
+    }
+
+    // CRITICAL SECTION BEGINS - Only lock when actually writing
+    sem_wait(sem_log_file);
+
+    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
+
+    // Write to stdout
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
+            time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
-    // desbloquear o semáforo
     sem_post(sem_log_file);
+    // CRITICAL SECTION ENDS
 
-    // libertar a memoria alocada para a mensagem formatada
+    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -98,12 +113,6 @@ static void cleanup()
         {
             log_info("%s fechado com sucesso", STATISTICS_MQ);
         }
-    }
-
-    if (buf)
-    {
-        free(buf);
-        buf = NULL;
     }
 
     if (stats.miner_invalid_blocks)
@@ -163,30 +172,26 @@ static void cleanup()
         fclose(log_file);
     }
 
+    if (buf)
+    {
+        free(buf);
+        buf = NULL;
+    }
+
+    freeLedger(&ledger);
+
     // fechar o semaforo para logs
     if (sem_log_file != NULL)
     {
         if (sem_close(sem_log_file) == -1)
         {
-            log_info("Erro ao fechar semáforo %s", SEM_LOG_FILE);
+            printf("\nErro ao fechar semáforo %s", SEM_LOG_FILE);
         }
         else
         {
-            log_info("%s fechado com sucesso", SEM_LOG_FILE);
+            printf("\n%s fechado com sucesso", SEM_LOG_FILE);
         }
     }
-}
-
-static void sigterm(int signum)
-{
-    (void)signum; // Ignore the signal parameter
-
-    log_info("SIGTERM recebido. A terminar execução...");
-
-    cleanup(); // Call the cleanup function to close the log file and semaphores
-
-    // Exit the process
-    exit(EXIT_SUCCESS);
 }
 
 void printStatistics()
@@ -198,8 +203,22 @@ void printStatistics()
     log_info("Tempo médio para aprovação de uma transação: %.2f segundos", stats.total_tx_time / (stats.blocks_in_chain * TRANSACTIONS_PER_BLOCK));
     for (int i = 0; i < NUM_MINERS; i++)
     {
-        log_info("Miner %d: Blocos válidos: %d, Blocos inválidos: %d, Créditos: %d", i, stats.miner_valid_blocks[i], stats.miner_invalid_blocks[i], stats.miner_credits[i]);
+        log_info("Miner %d: Blocos válidos: %d, Blocos inválidos: %d, Créditos: %d", i + 1, stats.miner_valid_blocks[i], stats.miner_invalid_blocks[i], stats.miner_credits[i]);
     }
+}
+
+static void sigterm(int signum)
+{
+    (void)signum; // Ignore the signal parameter
+
+    log_info("SIGTERM recebido. A terminar execução...");
+
+    printStatistics(); // Print statistics before exiting
+
+    cleanup(); // Call the cleanup function to close the log file and semaphores
+
+    // Exit the process
+    exit(EXIT_SUCCESS);
 }
 
 static void handle_sigusr1(int signum)
@@ -228,9 +247,7 @@ void statistics()
         cleanup();
         return;
     }
-    char temp[64];
-    snprintf(temp, sizeof(temp), "STATISTICS [%d]", getpid());
-    TIPO_PROCESSO = strdup(temp);
+    snprintf(TIPO_PROCESSO, sizeof(TIPO_PROCESSO_BUFFER), "STATISTICS [%d]", getpid());
 
     /* 1) Open the queue for reading */
     statistics_mq = mq_open(STATISTICS_MQ, O_RDONLY);
@@ -304,7 +321,6 @@ void statistics()
     /* 4) Loop receiving */
     while (1)
     {
-        log_info("A aguardar mensagens na message queue...");
         ssize_t bytes_received = mq_receive(statistics_mq, buf, attr.mq_msgsize, NULL);
 
         if (bytes_received >= 0)
@@ -318,19 +334,22 @@ void statistics()
             /* Cast into your struct and print */
             StatisticsMessage *msg = (StatisticsMessage *)buf;
 
-            log_info("Bloco recebido: %s, Miner ID: %s, Índice do bloco: %d, Recompensa obtida: %d, Timestamp %ld", msg->txb_id, msg->miner_id, msg->block_index, msg->earned_amount, msg->timestamp);
+            // log_info("Bloco recebido: %s, Miner ID: %s, Índice do bloco: %d, Recompensa obtida: %d, Timestamp %ld", msg->txb_id, msg->miner_id, msg->block_index, msg->earned_amount, msg->timestamp);
 
             if (msg->block_index == -1)
             {
-                stats.miner_invalid_blocks[atoi(msg->miner_id)]++;
+                int miner_id = atoi(msg->miner_id) - 1;
+                stats.miner_invalid_blocks[miner_id]++;
                 stats.total_blocks_processed++;
             }
             else
             {
-                stats.miner_valid_blocks[atoi(msg->miner_id)]++;
+                int miner_id = atoi(msg->miner_id) - 1;
+                stats.miner_valid_blocks[miner_id]++;
+                stats.miner_credits[miner_id] += msg->earned_amount;
+
                 stats.total_blocks_processed++;
                 stats.blocks_in_chain++;
-                stats.miner_credits[atoi(msg->miner_id)] += msg->earned_amount;
 
                 sem_wait(sem_ledger);
                 if (ledger.blocks[msg->block_index].transactions != NULL)

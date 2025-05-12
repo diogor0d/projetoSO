@@ -4,7 +4,7 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
-#define _GNU_SOURCE // para o vasprintf
+#define _GNU_SOURCE // para o vasprintf e strcasestr
 #include <stdio.h>
 #include <pthread.h>
 #include <sys/mman.h>
@@ -25,7 +25,9 @@
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char *TIPO_PROCESSO = NULL;
+
+static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
 static sem_t *sem_transactionspool = NULL;
 static sem_t *sem_minerwork = NULL;
@@ -50,11 +52,6 @@ static int shm_transactionspool_fd = -1;
 static void *shm_ledger_base = NULL;
 static int shm_ledger_fd = -1;
 
-// minerwork condvar
-int shm_minerworkcondvar_fd = -1;
-static void *shm_minerworkcondvar_base = NULL;
-MinerWorKCondVar *minerwork_condvar = NULL;
-
 // variaveis para o pipe de comunicação entre miner e validator
 static int validation_pipe_fd = -1;
 
@@ -74,13 +71,12 @@ typedef struct
 
 static void log_info(const char *format, ...)
 {
-
     char *log_message;
     va_list args;
 
     va_start(args, format);
 
-    // formatar a string
+    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -90,27 +86,42 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // bloquear o semáforo
-    sem_wait(sem_log_file);
-
-    // obter o tempo atual
+    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer para "dd/mm/yyyy hh:mm:ss"
+    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Escrever a mensagem de log no ficheiro e no stdout
+    // Determine color based on content (outside of critical section)
+    const char *color_code = "\033[0m"; // Default: no color
+
+    if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
+    {
+        color_code = "\033[31m"; // Red
+    }
+    else if (strcasestr(log_message, "sucesso") != NULL || strcasestr(log_message, "execução") != NULL || strcasestr(log_message, "iniciado") != NULL)
+    {
+        color_code = "\033[32m"; // Green
+    }
+
+    // CRITICAL SECTION BEGINS - Only lock when actually writing
+    sem_wait(sem_log_file);
+
+    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
+
+    // Write to stdout
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
+            time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
-    // desbloquear o semáforo
     sem_post(sem_log_file);
+    // CRITICAL SECTION ENDS
 
-    // libertar a memoria alocada para a mensagem formatada
+    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -237,11 +248,11 @@ static void cleanup()
     {
         if (sem_close(sem_log_file) == -1)
         {
-            log_info("Erro ao fechar semáforo %s", SEM_LOG_FILE);
+            printf("\nErro ao fechar semáforo %s", SEM_LOG_FILE);
         }
         else
         {
-            log_info("%s fechado com sucesso", SEM_LOG_FILE);
+            printf("\n%s fechado com sucesso", SEM_LOG_FILE);
         }
     }
 }
@@ -268,6 +279,8 @@ void *signal_handler_thread(void *arg)
                 pthread_cancel(threads[i]); // Send cancellation request
             }
 
+            log_info("A aguardar pelo fim de tarefas pendentes...");
+
             // stop_threads = 1; // Set the stop flag to 1
 
             for (int i = 0; i < NUM_MINERS; i++)
@@ -281,8 +294,12 @@ void *signal_handler_thread(void *arg)
             log_info("Sinalizado ao validator que pode terminar (pipe)");
         }
     }
+    else
+    {
+        log_info("Erro no tratamento de sinais na thread de sinais: %s", strerror(errno));
+    }
 
-    log_info("Signal handler thread terminado.");
+    log_info("Signal handler thread terminada.");
 
     return NULL;
 }
@@ -412,7 +429,7 @@ void *miner_thread(void *arg)
         strncpy(block.previous_block_hash, previous_block_hash, HASH_SIZE);
         block.transactions = selected_transactions;
 
-        log_info("Thread %d: A calcular PoW para o bloco %s", thread_id, block.txb_id);
+        // log_info("Thread %d: A calcular PoW para o bloco %s", thread_id, block.txb_id);
         PoWResult r;
         do
         {
@@ -420,6 +437,8 @@ void *miner_thread(void *arg)
             pthread_testcancel();
             r = proof_of_work(&block);
         } while (r.error == 1 && !stop_threads);
+
+        log_info("Thread Miner %d: Novo bloco minerado %s", thread_id, block.txb_id);
 
         // prepararar dados para o pipe
         int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
@@ -480,25 +499,25 @@ void miner()
     if (sem_log_file == SEM_FAILED)
     {
         perror("\nMINER : Erro ao abrir semáforo para LOG_FILE");
-        return;
+        exit(EXIT_FAILURE);
     }
 
     log_file = open_log_file();
     if (log_file == NULL)
     {
         perror("\nMINER : Erro ao abrir o ficheiro de log");
-        return;
+        sem_close(sem_log_file);
+        exit(EXIT_FAILURE);
     }
-    char temp[20];
-    snprintf(temp, sizeof(temp), "MINER [%d]", getpid());
-    TIPO_PROCESSO = strdup(temp);
+    snprintf(TIPO_PROCESSO, sizeof(TIPO_PROCESSO_BUFFER), "MINER [%d]", getpid());
 
     // Abrir o semaforo para transactions pool
     sem_transactionspool = sem_open(SEM_TRANSACTIONS_POOL, 0);
     if (sem_transactionspool == SEM_FAILED)
     {
         log_info("\Erro ao abrir semáforo %s", SEM_TRANSACTIONS_POOL);
-        return;
+        cleanup();
+        exit(EXIT_FAILURE);
     }
 
     // abrir semaforo minerwork
@@ -506,7 +525,8 @@ void miner()
     if (sem_minerwork == SEM_FAILED)
     {
         log_info("Erro ao abrir semáforo %s", SEM_MINERWORK);
-        return;
+        cleanup();
+        exit(EXIT_FAILURE);
     }
 
     //
@@ -514,7 +534,8 @@ void miner()
     if (sem_ledger == SEM_FAILED)
     {
         log_info("Erro ao abrir semáforo %s", SEM_LEDGER);
-        return;
+        cleanup();
+        exit(EXIT_FAILURE);
     }
 
     // sem pipe closed
@@ -522,7 +543,8 @@ void miner()
     if (sem_pipeclosed == SEM_FAILED)
     {
         log_info("Erro ao abrir semáforo %s", SEM_PIPECLOSED);
-        return;
+        cleanup();
+        exit(EXIT_FAILURE);
     }
 
     // abrir o pipe no processo atual para acesso por todas as threads
@@ -530,6 +552,7 @@ void miner()
     if (validation_pipe_fd < 0)
     {
         log_info("Erro ao abrir o pipe de validação");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     log_info("Pipe %s aberto com sucesso.", VALIDATION_PIPE);
@@ -539,6 +562,7 @@ void miner()
     if (shm_transactionspool_fd == -1)
     {
         log_info("Erro ao abrir memória partilhada para transactions pool");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     log_info("%s aberta com sucesso", SHM_TRANSACTIONS_POOL);
@@ -549,6 +573,7 @@ void miner()
     {
         log_info("Erro ao mapear memória partilhada para transactions pool");
         close(shm_transactionspool_fd);
+        cleanup();
         exit(EXIT_FAILURE);
     }
     log_info("%s mapeada com sucesso", SHM_TRANSACTIONS_POOL);
@@ -558,6 +583,7 @@ void miner()
     if (shm_ledger_fd == -1)
     {
         log_info("MINER : Erro ao abrir memória partilhada para ledger");
+        cleanup();
         exit(EXIT_FAILURE);
     }
     log_info("%s aberta com sucesso", SHM_LEDGER);
@@ -571,28 +597,6 @@ void miner()
         exit(EXIT_FAILURE);
     }
     log_info("%s mapeada com sucesso", SHM_LEDGER);
-
-    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
-    if (shm_minerworkcondvar_fd == -1)
-    {
-        perror("Erro ao abrir SHM_MINERWORK_CONDVAR");
-        exit(EXIT_FAILURE);
-    }
-
-    // Map it
-    shm_minerworkcondvar_base = mmap(
-        NULL,
-        sizeof(MinerWorKCondVar),
-        PROT_READ | PROT_WRITE,
-        MAP_SHARED,
-        shm_minerworkcondvar_fd,
-        0);
-    if (shm_minerworkcondvar_base == MAP_FAILED)
-    {
-        perror("Erro ao mapear SHM_MINERWORK_CONDVAR");
-        exit(EXIT_FAILURE);
-    }
-    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
 
     //////////////////////////////////////
 

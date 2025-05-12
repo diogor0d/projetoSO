@@ -45,12 +45,6 @@ extern int BLOCKCHAIN_BLOCKS;
 
 typedef struct
 {
-    pthread_mutex_t mutex;
-    pthread_cond_t cond;
-} MinerWorKCondVar;
-
-typedef struct
-{
     char tx_id[TX_ID_LEN];
     int reward;
     float value;

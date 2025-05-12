@@ -9,3 +9,4 @@ DEIChain_log.txt
 .fuse_hidden*
 /pow_code
 core
+vgcore.*

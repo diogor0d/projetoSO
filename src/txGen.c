@@ -27,11 +27,6 @@ static void *shm_base = NULL;              // ponteiro para a memória partilhad
 static size_t shm_size = 0;                // tamanho da memória partilhada
 static TransactionPoolSHM *tx_pool = NULL; // ponteiro para a pool de transações
 
-// cond var
-static int shm_minerworkcondvar_fd = -1;
-static void *shm_minerworkcondvar_base = NULL;
-static MinerWorKCondVar *minerwork_condvar = NULL; // ponteiro para a cond var
-
 static int generated_transactions = 0; // contador de blocos gerados
 
 unsigned long long current_time_in_milliseconds()
@@ -73,22 +68,6 @@ void cleanup()
         if (close(shm_fd) == -1)
         {
             perror("Erro ao fechar SHM_TRANSACTIONS_POOL\n");
-        }
-    }
-
-    // limpar recursos da cond var
-    if (shm_minerworkcondvar_fd != -1)
-    {
-        if (shm_minerworkcondvar_base != NULL)
-        {
-            if (munmap(shm_minerworkcondvar_base, sizeof(MinerWorKCondVar)) == -1)
-            {
-                perror("Erro ao desmapear SHM_MINERWORK_CONDVAR\n");
-            }
-        }
-        if (close(shm_minerworkcondvar_fd) == -1)
-        {
-            perror("Erro ao fechar SHM_MINERWORK_CONDVAR\n");
         }
     }
 }
@@ -240,24 +219,6 @@ int main(int argc, char *argv[])
     }
 
     tx_pool = (TransactionPoolSHM *)shm_base;
-
-    // abrir cond var
-    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_RDWR, 0666);
-    if (shm_minerworkcondvar_fd == -1)
-    {
-        perror("Erro ao abrir SHM_MINERWORK_CONDVAR\n");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
-    if (shm_minerworkcondvar_base == MAP_FAILED)
-    {
-        perror("Erro ao mapear SHM_MINERWORK_CONDVAR\n");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-    minerwork_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
 
     srand(time(NULL));
 

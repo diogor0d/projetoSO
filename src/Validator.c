@@ -4,7 +4,7 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
-#define _GNU_SOURCE // para o vasprintf
+#define _GNU_SOURCE // para o vasprintf e strcasestr
 #include <stdio.h>
 #include <sys/mman.h>
 #include <fcntl.h>
@@ -26,7 +26,8 @@
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char *TIPO_PROCESSO = NULL;
+static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
 // aceder a variavel globais do controller
 int LEDGER_SIZE;
@@ -54,15 +55,23 @@ static int shm_ledger_fd = -1;
 // variaveis para o pipe de comunicação entre miner e validator
 static int validation_pipe_fd = -1;
 
-static void log_info(const char *format, ...)
-{
+// buffer pipe
+char *buffer;
 
+int *tx_found_bitmap;
+
+TransactionBlock nemesis_block = {0};
+TransactionBlock streamed_block = {0};
+
+static void
+log_info(const char *format, ...)
+{
     char *log_message;
     va_list args;
 
     va_start(args, format);
 
-    // formatar a string
+    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -72,27 +81,42 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // bloquear o semáforo
-    sem_wait(sem_log_file);
-
-    // obter o tempo atual
+    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer para "dd/mm/yyyy hh:mm:ss"
+    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Escrever a mensagem de log no ficheiro e no stdout
+    // Determine color based on content (outside of critical section)
+    const char *color_code = "\033[0m"; // Default: no color
+
+    if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
+    {
+        color_code = "\033[31m"; // Red
+    }
+    else if (strcasestr(log_message, "sucesso") != NULL || strcasestr(log_message, "execução") != NULL || strcasestr(log_message, "iniciado") != NULL)
+    {
+        color_code = "\033[32m"; // Green
+    }
+
+    // CRITICAL SECTION BEGINS - Only lock when actually writing
+    sem_wait(sem_log_file);
+
+    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s\033[0m", time_str, TIPO_PROCESSO, log_message);
+
+    // Write to stdout
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
+            time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
-    // desbloquear o semáforo
     sem_post(sem_log_file);
+    // CRITICAL SECTION ENDS
 
-    // libertar a memoria alocada para a mensagem formatada
+    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -155,15 +179,7 @@ void cleanup()
         }
     }
 
-    if (ledgerInterface.blocks)
-    {
-        free(ledgerInterface.blocks);
-        log_info("Interface da ledger libertada com sucesso");
-    }
-    else
-    {
-        log_info("Erro ao libertar a interface da ledger");
-    }
+    freeLedger(&ledgerInterface);
 
     // Fechar o semáforo
     if (sem_tx_pool != NULL)
@@ -210,16 +226,37 @@ void cleanup()
         fclose(log_file);
     }
 
+    if (buffer)
+    {
+        free(buffer);
+        buffer = NULL;
+    }
+    if (tx_found_bitmap)
+    {
+        free(tx_found_bitmap);
+        tx_found_bitmap = NULL;
+    }
+    if (streamed_block.transactions)
+    {
+        free(streamed_block.transactions);
+        streamed_block.transactions = NULL;
+    }
+    if (nemesis_block.transactions)
+    {
+        free(nemesis_block.transactions);
+        nemesis_block.transactions = NULL;
+    }
+
     // fechar o semaforo para logs
     if (sem_log_file != NULL)
     {
         if (sem_close(sem_log_file) == -1)
         {
-            log_info("Erro ao fechar semáforo %s", SEM_LOG_FILE);
+            printf("\nErro ao fechar semáforo %s", SEM_LOG_FILE);
         }
         else
         {
-            log_info("%s fechado com sucesso", SEM_LOG_FILE);
+            printf("\n%s fechado com sucesso", SEM_LOG_FILE);
         }
     }
 }
@@ -275,9 +312,7 @@ void validator(int num)
         cleanup();
         return;
     }
-    char buffer[20];
-    snprintf(buffer, sizeof(buffer), "VALIDATOR %d [%d]", num, getpid());
-    TIPO_PROCESSO = strdup(buffer);
+    snprintf(TIPO_PROCESSO, sizeof(TIPO_PROCESSO_BUFFER), "VALIDATOR %d [%d]", num, getpid());
 
     // abrir a memoria partilhada para a transactions pool (já existente)
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_RDWR, 0666);
@@ -361,8 +396,6 @@ void validator(int num)
 
     if (*(ledgerInterface.count) == 0)
     {
-        TransactionBlock nemesis_block;
-        memset(&nemesis_block, 0, sizeof(TransactionBlock));
         nemesis_block.transactions =
             (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
         PoWResult r;
@@ -370,6 +403,8 @@ void validator(int num)
         if (r.error)
         {
             perror("Could not compute the Hash\n");
+            free(nemesis_block.transactions);
+            cleanup();
             exit(1);
         }
 
@@ -393,15 +428,13 @@ void validator(int num)
 
     sem_post(sem_ledger); // desbloquear o semáforo para o ledger
 
-    sleep(5);
-
     // print_ledger(&ledgerInterface); // Print the ledger
 
     while (1)
     {
         // tamanho - "header" - transacoes
         size_t MAX_BLOCK_SIZE = sizeof(size_t) + (sizeof(TransactionBlock) - sizeof(Transaction *)) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
-        char *buffer = malloc(MAX_BLOCK_SIZE);
+        buffer = malloc(MAX_BLOCK_SIZE);
         if (!buffer)
         {
             perror("malloc");
@@ -411,7 +444,6 @@ void validator(int num)
         ssize_t read_bytes = read(validation_pipe_fd, buffer, MAX_BLOCK_SIZE);
         if (read_bytes <= 0)
         {
-            perror("read");
             free(buffer);
             break;
         }
@@ -436,7 +468,6 @@ void validator(int num)
 
         // Now parse the payload
         char *payload = buffer + sizeof(size_t);
-        TransactionBlock streamed_block;
 
         size_t header_size = sizeof(TransactionBlock) - sizeof(Transaction *);
         memcpy(&streamed_block, payload, header_size);
@@ -451,9 +482,7 @@ void validator(int num)
 
         memcpy(streamed_block.transactions, payload + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
 
-        log_info("Bloco recebido: %s\n", streamed_block.txb_id);
-
-        StatisticsMessage new_msg;
+        StatisticsMessage new_msg = {0};
         int skip_block = 0; // Flag to indicate whether to skip the block
         char last_block_hash[HASH_SIZE];
 
@@ -461,6 +490,8 @@ void validator(int num)
         sem_wait(sem_ledger);
         memcpy(last_block_hash, ledgerInterface.last_block_hash, HASH_SIZE);
         sem_post(sem_ledger);
+
+        log_info("Inicio da validação do bloco %s", streamed_block.txb_id);
 
         // Verify nonce - can be done outside lock
         if (!verify_nonce(&streamed_block))
@@ -481,7 +512,7 @@ void validator(int num)
         Transaction temp_tx_array[TRANSACTIONS_PER_BLOCK];
 
         // Dynamically allocate tx_found_bitmap
-        int *tx_found_bitmap = calloc(TRANSACTIONS_PER_BLOCK, sizeof(int));
+        tx_found_bitmap = calloc(TRANSACTIONS_PER_BLOCK, sizeof(int));
         if (!tx_found_bitmap)
         {
             perror("calloc tx_found_bitmap");
@@ -496,7 +527,7 @@ void validator(int num)
             sem_wait(sem_tx_pool);
 
             // First, check if transactions exist in the pool
-            log_info("Verificando transações do bloco %s", streamed_block.txb_id);
+            // log_info("Verificando transações do bloco %s", streamed_block.txb_id);
             for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK && !skip_block; i++)
             {
                 int found = 0;
@@ -538,7 +569,7 @@ void validator(int num)
             // OPTIMIZATION 4: If the block is valid, remove transactions from pool in the same lock session
             if (!skip_block)
             {
-                log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
+                // log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
                 for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
                 {
                     for (size_t j = 0; j < *(tx_pool.size); j++)
@@ -559,7 +590,7 @@ void validator(int num)
                 }
 
                 // OPTIMIZATION 5: Perform aging in the same critical section
-                log_info("Aging transactions na transactions pool");
+                // log_info("Aging transactions na transactions pool");
                 for (size_t i = 0; i < *(tx_pool.size); i++)
                 {
                     if (tx_pool.transactions[i].filled == 1)
@@ -572,7 +603,7 @@ void validator(int num)
                     }
                 }
 
-                log_info("Transações restantes na transactions pool: %d", *(tx_pool.count));
+                // log_info("Transações restantes na transactions pool: %d", *(tx_pool.count));
             }
 
             sem_post(sem_tx_pool);
@@ -610,17 +641,18 @@ void validator(int num)
             }
             else
             {
-                log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
+                // log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
             }
 
             continue;
         }
 
+        log_info("Bloco %s validado com sucesso", streamed_block.txb_id);
+
         // Block is valid - prepare to add to ledger
         // Compute hash outside the lock
         char hash[HASH_SIZE];
         compute_sha256(&streamed_block, hash);
-        log_info("Hash do bloco recebido: %s\n", hash);
 
         // OPTIMIZATION 7: Short and focused ledger update
         sem_wait(sem_ledger);
@@ -660,6 +692,8 @@ void validator(int num)
 
         sem_post(sem_ledger);
 
+        log_info("Bloco %s inserido na blockchain.", streamed_block.txb_id);
+
         // OPTIMIZATION 8: Prepare statistics message outside locks
         snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
 
@@ -692,11 +726,8 @@ void validator(int num)
         }
         else
         {
-            log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
+            // log_info("Mensagem enviada para a message queue %s", STATISTICS_MQ);
         }
-
-        log_info("Bloco aprovado:");
-        print_transaction_block(&streamed_block);
 
         free(buffer);
         free(streamed_block.transactions);

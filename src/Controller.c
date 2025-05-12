@@ -4,7 +4,7 @@
     Guilherme Teixeira Gonçalves Rosmaninho 2022257636
 */
 
-#define _GNU_SOURCE // para o vasprintf
+#define _GNU_SOURCE // para o vasprintf e strcasestr
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,10 +36,9 @@ int TRANSACTION_POOL_SIZE;
 
 // Definições de semáforos e memória partilhada para acesso global
 
-static int shm_transactionspool_fd, shm_ledger_fd, shm_minerworkcondvar_fd;
+static int shm_transactionspool_fd, shm_ledger_fd;
 static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
-static void *shm_minerworkcondvar_base = NULL;
 
 static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclosed;
 
@@ -64,8 +63,10 @@ pid_t pids[3];
 // para facilitar o funcionalidade de logging de forma global
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char *TIPO_PROCESSO = NULL;
 static int cleanup_called = 0;
+
+static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
 FILE *open_log_file()
 {
@@ -89,13 +90,12 @@ int is_positive_integer(const char *str)
 // Função para escrever mensagens de log no logfile e no stdout
 static void log_info(const char *format, ...)
 {
-
     char *log_message;
     va_list args;
 
     va_start(args, format);
 
-    // formatar a string
+    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -105,28 +105,103 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // bloquear o semáforo
-    sem_wait(sem_log_file);
-
-    // obter o tempo atual
+    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer para "dd/mm/yyyy hh:mm:ss"
+    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Escrever a mensagem de log no ficheiro e no stdout
+    // Determine color based on content (outside of critical section)
+    const char *color_code = "\033[0m"; // Default: no color
+
+    if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
+    {
+        color_code = "\033[31m"; // Red
+    }
+    else if (strcasestr(log_message, "sucesso") != NULL || strcasestr(log_message, "execução") != NULL || strcasestr(log_message, "iniciado") != NULL)
+    {
+        color_code = "\033[32m"; // Green
+    }
+
+    // CRITICAL SECTION BEGINS - Only lock when actually writing
+    sem_wait(sem_log_file);
+
+    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
-    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s", time_str, TIPO_PROCESSO, log_message);
+
+    // Write to stdout
+    fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
+            time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
-    // desbloquear o semáforo
     sem_post(sem_log_file);
+    // CRITICAL SECTION ENDS
 
-    // libertar a memoria alocada para a mensagem formatada
+    // Free memory (outside of critical section)
     free(log_message);
+}
+
+void dump_ledger(const LedgerInterface *ledger)
+{
+    if (ledger == NULL || ledger->blocks == NULL)
+    {
+        log_info("Ledger is empty or not initialized.");
+        return;
+    }
+
+    size_t estimated_size = 256 + (*ledger->count * (sizeof(Transaction) + 100) * TRANSACTIONS_PER_BLOCK);
+    char *buffer = (char *)malloc(estimated_size);
+    if (!buffer)
+    {
+        log_info("Falha ao alocar memoria para o buffer do ledger dump");
+        return;
+    }
+
+    // Initialize buffer with empty string
+    buffer[0] = '\0';
+
+    // Build header info
+    char temp[256];
+    strcat(buffer, "\n=================== Start Ledger ===================\n");
+
+    // Add each block
+    for (unsigned int i = 0; i < *ledger->count; i++)
+    {
+        TransactionBlockInterface block = ledger->blocks[i];
+        if (strcmp(block.txb_id, "") == 0)
+        {
+            continue;
+        }
+
+        // Add block header
+        snprintf(temp, sizeof(temp),
+                 "||---- Block  %u --\nBlock ID=%s\nPrevious Hash=%s\nBlock Timestamp=%ld\nNonce=%u\nTransactions:\n",
+                 i, block.txb_id, block.previous_block_hash,
+                 *block.timestamp, *block.nonce);
+        strcat(buffer, temp);
+
+        // Add transactions
+        for (unsigned int j = 0; j < TRANSACTIONS_PER_BLOCK; j++)
+        {
+            Transaction tx = block.transactions[j];
+            snprintf(temp, sizeof(temp),
+                     "    [%u]: ID=%s | Reward=%u | Value=%.2f | Timestamp=%ld\n",
+                     j, tx.tx_id, tx.reward, tx.value, tx.timestamp);
+            strcat(buffer, temp);
+        }
+        strcat(buffer, "||-------------------------------------\n");
+    }
+
+    strcat(buffer, "=================== End Ledger ===================\n");
+
+    // Output the entire ledger with a single call
+    log_info("%s", buffer);
+
+    // Clean up
+    free(buffer);
 }
 
 void parse_config()
@@ -336,37 +411,7 @@ static void cleanup()
         log_info("%s terminado com sucesso", SHM_LEDGER);
     }
 
-    // shm condvar
-    if (shm_minerworkcondvar_fd != -1)
-    {
-        if (close(shm_minerworkcondvar_fd) == -1)
-        {
-            log_info("Erro ao fechar %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("%s fechado com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-    if (shm_minerworkcondvar_base != NULL)
-    {
-        if (munmap(shm_minerworkcondvar_base, sizeof(MinerWorKCondVar)) == -1)
-        {
-            log_info("Erro ao desmapear %s", SHM_MINERWORK_CONDVAR);
-        }
-        else
-        {
-            log_info("Desmapeado %s com sucesso", SHM_MINERWORK_CONDVAR);
-        }
-    }
-    if (shm_unlink(SHM_MINERWORK_CONDVAR) == -1)
-    {
-        log_info("Erro ao terminar %s", SHM_MINERWORK_CONDVAR);
-    }
-    else
-    {
-        log_info("%s terminado com sucesso", SHM_MINERWORK_CONDVAR);
-    }
+    freeLedger(&ledger);
 
     // Close semaphores
     // transactions pool
@@ -535,7 +580,7 @@ static void handle_sigusr1(int signum)
     (void)signum;
     log_info("SIGUSR1 recebido - A efetuar ledger dump...");
     sem_wait(sem_ledger);
-    print_ledger(&ledger);
+    dump_ledger(&ledger);
     sem_post(sem_ledger);
 }
 
@@ -667,8 +712,7 @@ int main()
     {
         // Ignorar sinais que não podem ser tratados ou que não podem ser ignorados
 
-        // VOLTAR A TIRAR O SIGTSTP
-        if (i == SIGTSTP || i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
+        if (i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
         {
             continue;
         }
@@ -699,9 +743,7 @@ int main()
     }
 
     // string para identificar o tipo de processo nos logs
-    char temp[20];
-    snprintf(temp, sizeof(temp), "CONTROLLER [%d]", getpid());
-    TIPO_PROCESSO = strdup(temp);
+    snprintf(TIPO_PROCESSO, sizeof(TIPO_PROCESSO_BUFFER), "CONTROLLER [%d]", getpid());
 
     log_info("Processo Controller iniciado (PID: %d)", getpid());
     log_info("Configurações atuais:");
@@ -749,6 +791,7 @@ int main()
         cleanup();
         exit(EXIT_FAILURE);
     }
+    log_info("Semáforo %s criado com sucesso", SEM_PIPECLOSED);
 
     // shared memory transactions pool
     shm_transactionspool_fd = shm_open(SHM_TRANSACTIONS_POOL, O_CREAT | O_RDWR, 0666);
@@ -814,63 +857,6 @@ int main()
     ((LedgerSHM *)shm_ledger_base)->num_blocks = BLOCKCHAIN_BLOCKS;    // Inicializar o número de blocos no ledger
     ((LedgerSHM *)shm_ledger_base)->blocks_offset = sizeof(LedgerSHM); // Inicializar o offset para as transações
     log_info("Memória partilhada para a ledger inicializada com sucesso");
-
-    ledger = interfaceLedger(shm_ledger_base);
-
-    // inicializacao da memoria partilhada para a variavel de condicao para funcionamento dos miners
-    shm_minerworkcondvar_fd = shm_open(SHM_MINERWORK_CONDVAR, O_CREAT | O_RDWR, 0666);
-    if (shm_minerworkcondvar_fd == -1)
-    {
-        log_info("Erro na criação de %s", SHM_MINERWORK_CONDVAR);
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-    if (ftruncate(shm_minerworkcondvar_fd, sizeof(MinerWorKCondVar)) == -1)
-    {
-        perror("Erro ao redimensionar SHM_MINERWORK_CONDVAR");
-        exit(EXIT_FAILURE);
-    }
-    log_info("%s redimensionada com sucesso para %d bytes", SHM_MINERWORK_CONDVAR, sizeof(MinerWorKCondVar));
-    // mapeamento
-    shm_minerworkcondvar_base = mmap(NULL, sizeof(MinerWorKCondVar), PROT_READ | PROT_WRITE, MAP_SHARED, shm_minerworkcondvar_fd, 0);
-    if (shm_minerworkcondvar_base == MAP_FAILED)
-    {
-        perror("Erro ao mapear SHM_TRANSACTIONS_POOL");
-        exit(EXIT_FAILURE);
-    }
-    memset(shm_minerworkcondvar_base, 0, sizeof(MinerWorKCondVar)); // Inicializar a memória partilhada a 0 para a variavel de condicao
-
-    MinerWorKCondVar *miner_work_condvar = (MinerWorKCondVar *)shm_minerworkcondvar_base;
-
-    // mutex
-    pthread_mutexattr_t mutex_attr;
-    pthread_mutexattr_init(&mutex_attr);
-    pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-
-    // inicializar o mutex na memoria partilhada
-    if (pthread_mutex_init(&miner_work_condvar->mutex, &mutex_attr) != 0)
-    {
-        log_info("Erro ao inicializar o mutex na memória partilhada");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    // condvar
-    pthread_condattr_t cond_attr;
-    pthread_condattr_init(&cond_attr);
-    pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
-
-    // inicializar a variavel de condicao na memoria partilhada
-    if (pthread_cond_init(&miner_work_condvar->cond, &cond_attr) != 0)
-    {
-        log_info("Erro ao inicializar a variável de condição na memória partilhada");
-        cleanup();
-        exit(EXIT_FAILURE);
-    }
-
-    // Destroy the attributes after initialization
-    pthread_mutexattr_destroy(&mutex_attr);
-    pthread_condattr_destroy(&cond_attr);
 
     // Criar pipe para comunição entre validator e miner
     if ((mkfifo(VALIDATION_PIPE, O_CREAT | O_EXCL | 0777) < 0) && (errno != EEXIST))
@@ -968,6 +954,8 @@ int main()
     }
 
     // Voltar a tratar os sinais de interrupção e paragem
+
+    ledger = interfaceLedger(shm_ledger_base);
     signal(SIGINT, sigint);
     signal(SIGUSR1, handle_sigusr1);
 
