@@ -342,7 +342,10 @@ void *miner_thread(void *arg)
 
     while (!stop_threads)
     {
-        sem_wait(sem_minerwork);
+        struct timespec ts;
+        clock_gettime(CLOCK_REALTIME, &ts);
+        ts.tv_sec += 5;
+        sem_timedwait(sem_minerwork, &ts);
         pthread_testcancel(); // ponto de cancelamento
 
         // Create and initialize the resources structure

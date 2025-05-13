@@ -226,25 +226,15 @@ void cleanup()
         fclose(log_file);
     }
 
-    if (buffer)
+    if (buffer != NULL)
     {
         free(buffer);
         buffer = NULL;
     }
-    if (tx_found_bitmap)
-    {
-        free(tx_found_bitmap);
-        tx_found_bitmap = NULL;
-    }
-    if (streamed_block.transactions)
+    if (streamed_block.transactions != NULL)
     {
         free(streamed_block.transactions);
         streamed_block.transactions = NULL;
-    }
-    if (nemesis_block.transactions)
-    {
-        free(nemesis_block.transactions);
-        nemesis_block.transactions = NULL;
     }
 
     // fechar o semaforo para logs
@@ -432,6 +422,7 @@ void validator(int num)
 
     while (1)
     {
+
         // tamanho - "header" - transacoes
         size_t MAX_BLOCK_SIZE = sizeof(size_t) + (sizeof(TransactionBlock) - sizeof(Transaction *)) + (TRANSACTIONS_PER_BLOCK * sizeof(Transaction));
         buffer = malloc(MAX_BLOCK_SIZE);
@@ -445,6 +436,7 @@ void validator(int num)
         if (read_bytes <= 0)
         {
             free(buffer);
+            buffer = NULL;
             break;
         }
 
@@ -452,6 +444,7 @@ void validator(int num)
         {
             fprintf(stderr, "Leitura demasiado pequena para o tamanho recebido da transmissao \n");
             free(buffer);
+            buffer = NULL;
             break;
         }
 
@@ -463,6 +456,7 @@ void validator(int num)
         {
             fprintf(stderr, "Esperado payload com o tamanho %zu, recebido %zu\n", payload_size, read_bytes - sizeof(size_t));
             free(buffer);
+            buffer = NULL;
             break;
         }
 
@@ -477,6 +471,7 @@ void validator(int num)
         {
             perror("malloc transactions");
             free(buffer);
+            buffer = NULL;
             break;
         }
 
@@ -517,6 +512,7 @@ void validator(int num)
         {
             perror("calloc tx_found_bitmap");
             free(buffer);
+            buffer = NULL;
             free(streamed_block.transactions);
             break;
         }
@@ -613,6 +609,7 @@ void validator(int num)
         if (skip_block)
         {
             free(buffer);
+            buffer = NULL;
             free(streamed_block.transactions);
             free(tx_found_bitmap); // Free dynamically allocated bitmap
 
@@ -730,8 +727,11 @@ void validator(int num)
         }
 
         free(buffer);
+        buffer = NULL;
         free(streamed_block.transactions);
+        streamed_block.transactions = NULL;
         free(tx_found_bitmap); // Free dynamically allocated bitmap
+        tx_found_bitmap = NULL;
     }
 
     cleanup();

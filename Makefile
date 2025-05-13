@@ -8,7 +8,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g #-fsanitize=address
 
 # Source files
 SRCS = src/Controller.c src/Miner.c src/SHMManagement.c src/Validator.c src/Statistics.c src/PoW/pow.c

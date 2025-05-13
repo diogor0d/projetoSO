@@ -45,7 +45,7 @@ static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclose
 int shm_transactionspool_size, shm_ledger_size;
 
 // para apresentar a ledger no sigusr1
-LedgerInterface ledger;
+static LedgerInterface ledger;
 
 // mesage queue
 mqd_t statistics_mq;
@@ -586,6 +586,7 @@ static void handle_sigusr1(int signum)
 
 void *validator_launcher(void *arg)
 {
+    (void)arg; // Ignorar argumento
     // Set cancellation state
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
@@ -598,9 +599,21 @@ void *validator_launcher(void *arg)
     log_info("Thread de gestão de validadores em execução...");
 
     // Use a controlled loop instead of infinite loop
+    TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
     while (!stop_thread)
     {
-        TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
+
+        sem_wait(sem_ledger);
+        if (*ledger.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
+        {
+            sem_post(sem_ledger);
+            log_info("Número máximo de blocos atingido. A terminar simulação. (SIGINT enviado para o controlador)");
+            stop_thread = 1;
+            // Signal the main thread to perform cleanup and exit
+            kill(getpid(), SIGINT);
+            break;
+        }
+        sem_post(sem_ledger);
 
         float occupancy = (float)pool->count / TRANSACTION_POOL_SIZE;
         // log_info("Ocupação da transactions pool: %.2f%%", occupancy * 100);
@@ -962,6 +975,7 @@ int main()
         exit(EXIT_SUCCESS);
     }
 
+    ledger = interfaceLedger(shm_ledger_base);
     // thread the gestao de validators
     if (pthread_create(&validator_launcher_thread, NULL, validator_launcher, NULL) != 0)
     {
@@ -976,8 +990,6 @@ int main()
     }
 
     // Voltar a tratar os sinais de interrupção e paragem
-
-    ledger = interfaceLedger(shm_ledger_base);
     signal(SIGINT, sigint);
     signal(SIGUSR1, handle_sigusr1);
 

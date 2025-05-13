@@ -234,7 +234,6 @@ int main(int argc, char *argv[])
         usleep(sleep_time * 1000);
 
         // Block on the semaphore before accessing the pool
-        printf("A tentar bloquear o semáforo...\n");
         if (sem_wait(sem_tx_pool) == -1)
         {
             cleanup();
