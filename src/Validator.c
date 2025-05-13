@@ -76,6 +76,7 @@ log_info(const char *format, ...)
     {
         va_end(args);
         perror("Erro ao formatar mensagem de log");
+        free(log_message);
         return;
     }
 
@@ -224,17 +225,6 @@ void cleanup()
     if (log_file)
     {
         fclose(log_file);
-    }
-
-    if (buffer != NULL)
-    {
-        free(buffer);
-        buffer = NULL;
-    }
-    if (streamed_block.transactions != NULL)
-    {
-        free(streamed_block.transactions);
-        streamed_block.transactions = NULL;
     }
 
     // fechar o semaforo para logs

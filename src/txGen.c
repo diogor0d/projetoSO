@@ -330,10 +330,6 @@ int main(int argc, char *argv[])
                     }
                 }
             }
-            else
-            {
-                printf("Já existem sinais suficientes para os miners (%d).\n", semval);
-            }
         }
     }
 
