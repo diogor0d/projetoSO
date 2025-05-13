@@ -60,6 +60,13 @@ volatile int stop_threads = 0;
 
 typedef struct
 {
+    Transaction *selected_transactions;
+    bool *selected_bitmap;
+    char *buffer;
+} ThreadResources;
+
+typedef struct
+{
     int thread_id;
 } MinerThreadArgs;
 
@@ -304,6 +311,20 @@ void *signal_handler_thread(void *arg)
     return NULL;
 }
 
+// Single cleanup function for all resources
+void cleanup_thread_resources(void *arg)
+{
+    ThreadResources *res = (ThreadResources *)arg;
+
+    if (res->buffer)
+        free(res->buffer);
+    if (res->selected_bitmap)
+        free(res->selected_bitmap);
+    if (res->selected_transactions)
+        free(res->selected_transactions);
+    free(res); // Free the structure itself
+}
+
 void *miner_thread(void *arg)
 {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
@@ -323,169 +344,188 @@ void *miner_thread(void *arg)
         sem_wait(sem_minerwork);
         pthread_testcancel(); // ponto de cancelamento
 
-        // criar variaveis temporarias
-        Transaction *selected_transactions = NULL;
-        char previous_block_hash[HASH_SIZE];
-        bool enough_transactions = false;
-        bool ledger_full = false;
-
-        // readonly para verificar se existe algo para processar
-        sem_wait(sem_transactionspool);
-        unsigned int tx_count = *tx_pool.count;
-        sem_post(sem_transactionspool);
-
-        sem_wait(sem_ledger);
-        unsigned int ledger_count = *(ledgerInterface.count);
-        sem_post(sem_ledger);
-
-        if (tx_count < TRANSACTIONS_PER_BLOCK || ledger_count >= (unsigned int)BLOCKCHAIN_BLOCKS)
+        // Create and initialize the resources structure
+        ThreadResources *res = calloc(1, sizeof(ThreadResources));
+        if (!res)
         {
+            log_info("Thread %d: Failed to allocate resource tracker", thread_id);
             continue;
         }
 
-        // preparar tudo para a secção critica
-        selected_transactions = (Transaction *)calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
-        if (selected_transactions == NULL)
-        {
-            log_info("Thread %d: Falha ao alocar memória para as transações selecionadas", thread_id);
-            continue;
-        }
+        // Flag to indicate if we need to break the outer loop
+        bool should_break_outer = false;
 
-        sem_wait(sem_transactionspool);
+        pthread_cleanup_push(cleanup_thread_resources, res);
 
-        // Now recheck conditions inside the lock
-        if (*tx_pool.count >= TRANSACTIONS_PER_BLOCK)
-        {
-            bool *selected_bitmap = (bool *)calloc(*tx_pool.size, sizeof(bool));
-            if (selected_bitmap == NULL)
-            {
-                log_info("Thread %d: Falha ao alocar memória para o bitmap", thread_id);
-                sem_post(sem_transactionspool);
-                free(selected_transactions);
-                continue;
-            }
-
-            int selected_count = 0;
-            while (selected_count < (int)TRANSACTIONS_PER_BLOCK && *tx_pool.count >= TRANSACTIONS_PER_BLOCK)
-            {
-                unsigned int random_index = rand() % *tx_pool.size;
-
-                if (selected_bitmap[random_index])
-                {
-                    continue;
-                }
-
-                PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
-
-                if (strcmp(current_transaction->tx.tx_id, "0") != 0 && current_transaction->filled == 1)
-                {
-                    // Copy transaction data instead of just referencing
-                    selected_transactions[selected_count].reward = current_transaction->tx.reward;
-                    selected_transactions[selected_count].value = current_transaction->tx.value;
-                    selected_transactions[selected_count].timestamp = current_transaction->tx.timestamp;
-                    strncpy(selected_transactions[selected_count].tx_id, current_transaction->tx.tx_id, TX_ID_LEN);
-                    selected_count++;
-                }
-            }
-
-            enough_transactions = (selected_count == (int)TRANSACTIONS_PER_BLOCK);
-            free(selected_bitmap);
-        }
-
-        sem_post(sem_transactionspool);
-
-        if (!enough_transactions)
-        {
-            free(selected_transactions);
-            continue;
-        }
-
-        sem_wait(sem_ledger);
-
-        // Recheck ledger conditions inside the lock
-        if (*(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
-        {
-            strncpy(previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE);
-            ledger_full = false;
-        }
-        else
-        {
-            ledger_full = true;
-        }
-
-        sem_post(sem_ledger);
-
-        if (ledger_full)
-        {
-            log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
-            free(selected_transactions);
-            break;
-        }
-
-        // efetuar pow fora de locks de semaforos : minimizar secções críticas
-        TransactionBlock block;
-        memset(&block, 0, sizeof(TransactionBlock));
-        snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, block_number++);
-        strncpy(block.previous_block_hash, previous_block_hash, HASH_SIZE);
-        block.transactions = selected_transactions;
-
-        // log_info("Thread %d: A calcular PoW para o bloco %s", thread_id, block.txb_id);
-        PoWResult r;
+        // o do-while() é usado para permitir o uso de um unico pthread_cleaunp_push, garantindo a facil implementacao de cleanup perante o cenario de um pthread cancel (evitar memory leaks causados pelo cancelamento sem free() de uma thread)
         do
         {
-            block.timestamp = time(NULL);
-            pthread_testcancel();
-            r = proof_of_work(&block);
-        } while (r.error == 1 && !stop_threads);
+            // criar variaveis temporarias
+            char previous_block_hash[HASH_SIZE];
+            bool enough_transactions = false;
+            bool ledger_full = false;
 
-        log_info("Thread Miner %d: Novo bloco minerado %s", thread_id, block.txb_id);
+            // readonly para verificar se existe algo para processar
+            sem_wait(sem_transactionspool);
+            unsigned int tx_count = *tx_pool.count;
+            sem_post(sem_transactionspool);
 
-        // prepararar dados para o pipe
-        int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
+            sem_wait(sem_ledger);
+            unsigned int ledger_count = *(ledgerInterface.count);
+            sem_post(sem_ledger);
 
-        size_t before_transactions = offsetof(TransactionBlock, transactions);
-        size_t after_transactions = sizeof(TransactionBlock) - offsetof(TransactionBlock, transactions) - sizeof(Transaction *);
-        size_t header_size = before_transactions + after_transactions;
-        size_t txs_size = sizeof(Transaction) * TRANSACTIONS_PER_BLOCK;
-        size_t total_payload_size = header_size + txs_size;
-        size_t total_size = sizeof(size_t) + total_payload_size;
+            if (tx_count < TRANSACTIONS_PER_BLOCK || ledger_count >= (unsigned int)BLOCKCHAIN_BLOCKS)
+            {
+                break; // Break from do-while(0), will continue outer loop
+            }
 
-        if ((int)total_size > pipe_size)
+            // preparar tudo para a secção critica
+            res->selected_transactions = calloc(TRANSACTIONS_PER_BLOCK, sizeof(Transaction));
+            if (!res->selected_transactions)
+            {
+                log_info("Thread %d: Memory allocation failed", thread_id);
+                break; // Break from do-while(0)
+            }
+
+            sem_wait(sem_transactionspool);
+
+            // Now recheck conditions inside the lock
+            if (*tx_pool.count >= TRANSACTIONS_PER_BLOCK)
+            {
+                res->selected_bitmap = calloc(*tx_pool.size, sizeof(bool));
+                if (!res->selected_bitmap)
+                {
+                    log_info("Thread %d: Bitmap allocation failed", thread_id);
+                    sem_post(sem_transactionspool); // Must release semaphore before breaking
+                    break;                          // Break from do-while(0)
+                }
+
+                int selected_count = 0;
+                while (selected_count < (int)TRANSACTIONS_PER_BLOCK && *tx_pool.count >= TRANSACTIONS_PER_BLOCK)
+                {
+                    unsigned int random_index = rand() % *tx_pool.size;
+
+                    if (res->selected_bitmap[random_index])
+                    {
+                        continue; // This continue is fine - it's for the inner while loop
+                    }
+
+                    PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
+
+                    if (strcmp(current_transaction->tx.tx_id, "0") != 0 && current_transaction->filled == 1)
+                    {
+                        // Copy transaction data instead of just referencing
+                        res->selected_transactions[selected_count].reward = current_transaction->tx.reward;
+                        res->selected_transactions[selected_count].value = current_transaction->tx.value;
+                        res->selected_transactions[selected_count].timestamp = current_transaction->tx.timestamp;
+                        strncpy(res->selected_transactions[selected_count].tx_id, current_transaction->tx.tx_id, TX_ID_LEN);
+                        selected_count++;
+                    }
+                }
+
+                enough_transactions = (selected_count == (int)TRANSACTIONS_PER_BLOCK);
+            }
+
+            sem_post(sem_transactionspool);
+
+            if (!enough_transactions)
+            {
+                break; // Break from do-while(0)
+            }
+
+            sem_wait(sem_ledger);
+
+            // Recheck ledger conditions inside the lock
+            if (*(ledgerInterface.count) < (unsigned int)BLOCKCHAIN_BLOCKS)
+            {
+                strncpy(previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE);
+                ledger_full = false;
+            }
+            else
+            {
+                ledger_full = true;
+            }
+
+            sem_post(sem_ledger);
+
+            if (ledger_full)
+            {
+                log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
+                should_break_outer = true; // Set flag to break outer loop
+                break;                     // Break from do-while(0)
+            }
+
+            // efetuar pow fora de locks de semaforos : minimizar secções críticas
+            TransactionBlock block;
+            memset(&block, 0, sizeof(TransactionBlock));
+            snprintf(block.txb_id, TXB_ID_LEN, "BLOCK-%d-%d", thread_id, block_number++);
+            strncpy(block.previous_block_hash, previous_block_hash, HASH_SIZE);
+            block.transactions = res->selected_transactions;
+
+            // log_info("Thread %d: A calcular PoW para o bloco %s", thread_id, block.txb_id);
+            PoWResult r;
+            do
+            {
+                block.timestamp = time(NULL);
+                pthread_testcancel();
+                r = proof_of_work(&block);
+            } while (r.error == 1 && !stop_threads);
+
+            log_info("Thread Miner %d: Novo bloco minerado %s", thread_id, block.txb_id);
+
+            // prepararar dados para o pipe
+            int pipe_size = fcntl(validation_pipe_fd, F_GETPIPE_SZ);
+
+            size_t before_transactions = offsetof(TransactionBlock, transactions);
+            size_t after_transactions = sizeof(TransactionBlock) - offsetof(TransactionBlock, transactions) - sizeof(Transaction *);
+            size_t header_size = before_transactions + after_transactions;
+            size_t txs_size = sizeof(Transaction) * TRANSACTIONS_PER_BLOCK;
+            size_t total_payload_size = header_size + txs_size;
+            size_t total_size = sizeof(size_t) + total_payload_size;
+
+            if ((int)total_size > pipe_size)
+            {
+                log_info("Thread %d: Tamanho do bloco excede PIPE_BUFFER", thread_id);
+            }
+
+            res->buffer = malloc(total_size);
+            if (!res->buffer)
+            {
+                perror("malloc");
+                break; // Break from do-while(0)
+            }
+
+            // esta estrutura estranha deve-se ao facto a compatibilizar com o codigo do PoW onde a estrutura do bloco de transacoes possui um ponteiro para as transacoes no meio da estrutura, algo que não facilita a serialização para comunicacao por pipe
+            // prefixo do tamanho
+            memcpy(res->buffer, &total_payload_size, sizeof(size_t));
+
+            // parte antes das transações
+            memcpy(res->buffer + sizeof(size_t), &block, before_transactions);
+
+            // parte depois das transações
+            char *after_transactions_src = (char *)&block + offsetof(TransactionBlock, transactions) + sizeof(Transaction *);
+            memcpy(res->buffer + sizeof(size_t) + before_transactions, after_transactions_src, after_transactions);
+
+            // transacoes
+            memcpy(res->buffer + sizeof(size_t) + header_size, block.transactions, txs_size);
+
+            // escrever para o pipe
+            ssize_t written = write(validation_pipe_fd, res->buffer, total_size);
+            if ((size_t)written != total_size)
+            {
+                log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
+            }
+
+            // If we reach here, this iteration completed successfully
+        } while (0); // End of do-while(0)
+
+        // This always executes - proper cleanup regardless of which path was taken
+        pthread_cleanup_pop(1); // Execute cleanup
+
+        if (should_break_outer)
         {
-            log_info("Thread %d: Tamanho do bloco excede PIPE_BUFFER", thread_id);
+            break; // Break the outer while(!stop_threads) loop
         }
-
-        char *buffer = malloc(total_size);
-        if (!buffer)
-        {
-            perror("malloc");
-            free(selected_transactions);
-            continue;
-        }
-
-        // esta estrutura estranha deve-se ao facto a compatibilizar com o codigo do PoW onde a estrutura do bloco de transacoes possui um ponteiro para as transacoes no meio da estrutura, algo que não facilita a serialização para comunicacao por pipe
-        // prefixo do tamanho
-        memcpy(buffer, &total_payload_size, sizeof(size_t));
-
-        // parte antes das transações
-        memcpy(buffer + sizeof(size_t), &block, before_transactions);
-
-        // parte depois das transações
-        char *after_transactions_src = (char *)&block + offsetof(TransactionBlock, transactions) + sizeof(Transaction *);
-        memcpy(buffer + sizeof(size_t) + before_transactions, after_transactions_src, after_transactions);
-
-        // transacoes
-        memcpy(buffer + sizeof(size_t) + header_size, block.transactions, txs_size);
-
-        // escrever para o pipe
-        ssize_t written = write(validation_pipe_fd, buffer, total_size);
-        if ((size_t)written != total_size)
-        {
-            log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
-        }
-
-        free(buffer);
-        free(selected_transactions);
     }
 
     log_info("Miner thread %d terminou.", thread_id);
