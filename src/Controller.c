@@ -602,18 +602,14 @@ void *validator_launcher(void *arg)
     TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
     while (!stop_thread)
     {
-
-        sem_wait(sem_ledger);
         if (*ledger.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
-            sem_post(sem_ledger);
             log_info("Número máximo de blocos atingido. A terminar simulação. (SIGINT enviado para o controlador)");
             stop_thread = 1;
             // Signal the main thread to perform cleanup and exit
             kill(getpid(), SIGINT);
             break;
         }
-        sem_post(sem_ledger);
 
         float occupancy = (float)pool->count / TRANSACTION_POOL_SIZE;
         // log_info("Ocupação da transactions pool: %.2f%%", occupancy * 100);
