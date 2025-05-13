@@ -322,6 +322,7 @@ void cleanup_thread_resources(void *arg)
         free(res->selected_bitmap);
     if (res->selected_transactions)
         free(res->selected_transactions);
+
     free(res); // Free the structure itself
 }
 

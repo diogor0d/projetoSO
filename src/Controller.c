@@ -726,6 +726,28 @@ int main()
     // Ler e processar o ficheiro de configuração
     parse_config();
 
+    if (BLOCKCHAIN_BLOCKS < 2)
+    {
+        printf("O número de blocos da blockchain deve ser maior que 1.\n");
+        exit(EXIT_FAILURE);
+    }
+
+    if (NUM_MINERS < 1)
+    {
+        printf("O número de miners deve ser maior que 0.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (TRANSACTION_POOL_SIZE < 1)
+    {
+        printf("O tamanho da transactions pool deve ser maior que 0.\n");
+        exit(EXIT_FAILURE);
+    }
+    if (TRANSACTIONS_PER_BLOCK < 1)
+    {
+        printf("O número de transações por bloco deve ser maior que 0.\n");
+        exit(EXIT_FAILURE);
+    }
+
     log_file = open_log_file();
     if (!log_file)
     {
