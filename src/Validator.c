@@ -28,15 +28,15 @@ static FILE *log_file = NULL;
 static char TIPO_PROCESSO_BUFFER[32];
 static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER;
 
-// aceder a variavel globais do controller
-int LEDGER_SIZE;
+// aceder a variavel extern do controller
+/* int LEDGER_SIZE;
 size_t TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
 int shm_ledger_size;
+int NUM_MINERS; */
 
 static sem_t *sem_tx_pool = NULL;
 static sem_t *sem_ledger = NULL;
-int NUM_MINERS;
 
 static mqd_t statistics_mq;
 

@@ -34,6 +34,7 @@ size_t TRANSACTIONS_PER_BLOCK;
 size_t transactions_per_block; // para compatibilidade com o PoW
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE;
+extern int LEDGER_SIZE;
 
 // Definições/atributos e memória partilhada para acesso global
 static int shm_transactionspool_fd, shm_ledger_fd;

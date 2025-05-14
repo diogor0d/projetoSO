@@ -34,12 +34,12 @@ static sem_t *sem_minerwork = NULL;
 static sem_t *sem_ledger = NULL;
 static sem_t *sem_pipeclosed = NULL;
 
-// parametros globais uteis do controlador
-int NUM_MINERS;
-int LEDGER_SIZE;
-size_t TRANSACTIONS_PER_BLOCK;
-int shm_transactionspool_size;
-int shm_ledger_size;
+// parametros globais uteis do controlador (extern)
+// int NUM_MINERS;
+// int LEDGER_SIZE;
+// size_t TRANSACTIONS_PER_BLOCK;
+// int shm_transactionspool_size;
+// int shm_ledger_size;
 
 // interfaces que facilitam a interação com a shared memory
 static LedgerInterface ledgerInterface;

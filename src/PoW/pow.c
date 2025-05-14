@@ -8,7 +8,7 @@
 
 #include "../../include/PoW/pow.h"
 
-size_t transactions_per_block;
+// size_t transactions_per_block extern definido em controller.h;
 
 int get_max_transaction_reward(const TransactionBlock *block,
                                const int txs_per_block)

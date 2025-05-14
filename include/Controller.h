@@ -42,6 +42,10 @@ extern int NUM_MINERS;
 extern size_t TRANSACTIONS_PER_BLOCK;
 extern size_t transactions_per_block; // para compatibilidade com o PoW (sem o modificar)
 extern int BLOCKCHAIN_BLOCKS;
+extern int LEDGER_SIZE;
+extern int TRANSACTION_POOL_SIZE;
+extern int shm_transactionspool_size;
+extern int shm_ledger_size;
 
 typedef struct
 {

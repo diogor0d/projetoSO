@@ -27,7 +27,7 @@ static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER;
 static int shm_ledger_fd = -1;
 static void *shm_ledger_base = NULL;
 static sem_t *sem_ledger = NULL;
-int shm_ledger_size;
+/* int shm_ledger_size; variavel extern*/
 static LedgerInterface ledger;
 
 static mqd_t statistics_mq;

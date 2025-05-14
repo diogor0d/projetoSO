@@ -3,9 +3,11 @@
 
 #include <string.h>
 
+/*
+extern
 size_t TRANSACTIONS_PER_BLOCK;
 int BLOCKCHAIN_BLOCKS;
-int TRANSACTION_POOL_SIZE;
+int TRANSACTION_POOL_SIZE; */
 
 // criar uma interface para a transactions pool: permite um acesso mais transparente à shared memory de transactions pool
 TransactionPoolInterface interfaceTxPool(void *shm_base)

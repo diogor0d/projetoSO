@@ -8,7 +8,7 @@
 CC = gcc
 
 # Compiler flags
-CFLAGS = -Wall -Wextra -g
+CFLAGS = -Wall -Wextra -g -std=gnu99
 
 # Source files
 SRCS = src/Controller.c src/Miner.c src/SHMManagement.c src/Validator.c src/Statistics.c src/PoW/pow.c
@@ -26,4 +26,5 @@ all:
 
 # Clean target
 clean:
-	rm -f $(TARGET) txgen
+	rm -f txgen
+	rm -f ${TARGET}
