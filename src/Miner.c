@@ -336,6 +336,7 @@ void *miner_thread(void *arg)
 
     while (!stop_threads)
     {
+        // este timedwait serve para mitigar busywaiting e tratar o caso em que nao ha sinalizacao de txgens para o miner efetuar trabalho
         struct timespec ts;
         clock_gettime(CLOCK_REALTIME, &ts);
         ts.tv_sec += 5;
