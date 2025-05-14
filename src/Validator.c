@@ -14,7 +14,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <signal.h>
-#include <openssl/sha.h>
 #include <semaphore.h>
 #include <pthread.h>
 #include <mqueue.h>
