@@ -54,8 +54,8 @@ mqd_t statistics_mq;
 // thread gestao de validators
 pid_t validators[2]; // validators extra
 pthread_t validator_launcher_thread;
-static int validator_thread_created = 0;
-static volatile int stop_thread = 0;
+static volatile sig_atomic_t validator_thread_created = 0;
+static volatile sig_atomic_t stop_thread = 0;
 
 // declarar array para armazenamento dos PIDs dos processos filhos (principais)
 pid_t pids[3];
@@ -64,7 +64,7 @@ pid_t pids[3];
 // para facilitar o funcionalidade de logging de forma global
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static int cleanup_called = 0;
+static volatile sig_atomic_t cleanup_called = 0;
 static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
 static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
@@ -256,6 +256,7 @@ void parse_config()
 // funcao para preparar o processo atual para um fim seguro on demand (libertacao de todos os recursos)
 static void cleanup()
 {
+    signal(SIGINT, SIG_IGN);
     // safeguard para evitar chamadas repetidas
     if (cleanup_called)
         return;
@@ -575,12 +576,18 @@ static void cleanup()
         fclose(log_file);
     }
 }
-
 static void sigint(int signum)
 {
-    (void)signum; // ignorar o sinal, não é necessário para o tratamento
+    // bloquear sigint para prevenir chamadas repetidas que por algum motivo aconteciam, mesmo segundo a noção que os sinais estao bloqueados no sig handler
+    signal(SIGINT, SIG_IGN);
+
+    (void)signum;
     log_info("SIGINT recebido... Paragem de execução em curso...");
-    cleanup();
+    if (!cleanup_called)
+    {
+        cleanup();
+    }
+
     exit(EXIT_SUCCESS);
 }
 

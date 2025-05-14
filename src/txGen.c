@@ -273,7 +273,7 @@ int main(int argc, char *argv[])
         // Debug information
         int semval;
         sem_getvalue(sem_minerwork, &semval);
-        printf("Semáforo minerwork: %d\n", semval);
+        // printf("Semáforo minerwork: %d\n", semval);
         printf("Transações na transactions pool: %d\n", *tx_pool_interface.count);
         printf("Trasacoes geradas: %d\n", generated_transactions);
 
