@@ -562,11 +562,11 @@ static void cleanup()
     // log file
     if (sem_unlink(SEM_LOG_FILE) == -1)
     {
-        printf("\n\033[33mController: Erro ao terminar semáforo %s\n", SEM_LOG_FILE);
+        printf("\n\033[33mController: Erro ao terminar semáforo %s\033[0m\n", SEM_LOG_FILE);
     }
     else
     {
-        printf("\033[33mController: %s terminado com sucesso\n", SEM_LOG_FILE);
+        printf("\033[33mController: %s terminado com sucesso\033[0m\n", SEM_LOG_FILE);
     }
 
     // fechar o log file

@@ -114,6 +114,32 @@ log_info(const char *format, ...)
 void cleanup()
 {
 
+    // Fechar o semáforo
+    if (sem_tx_pool != NULL)
+    {
+        if (sem_close(sem_tx_pool) == -1)
+        {
+            log_info("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL");
+        }
+        else
+        {
+            log_info("sem_tx_pool fechado com sucesso");
+        }
+    }
+
+    // ledger
+    if (sem_ledger != NULL)
+    {
+        if (sem_close(sem_ledger) == -1)
+        {
+            log_info("Erro ao fechar semáforo SEM_LEDGER");
+        }
+        else
+        {
+            log_info("sem_ledger fechado com sucesso");
+        }
+    }
+
     if (shm_ledger_fd != -1)
     {
         if (close(shm_ledger_fd) == -1)
@@ -174,32 +200,6 @@ void cleanup()
 
     freeLedger(&ledgerInterface);
 
-    // Fechar o semáforo
-    if (sem_tx_pool != NULL)
-    {
-        if (sem_close(sem_tx_pool) == -1)
-        {
-            log_info("Erro ao fechar o semáforo SEM_TRANSACTIONS_POOL");
-        }
-        else
-        {
-            log_info("sem_tx_pool fechado com sucesso");
-        }
-    }
-
-    // ledger
-    if (sem_ledger != NULL)
-    {
-        if (sem_close(sem_ledger) == -1)
-        {
-            log_info("Erro ao fechar semáforo SEM_LEDGER");
-        }
-        else
-        {
-            log_info("sem_ledger fechado com sucesso");
-        }
-    }
-
     // fechar message queue
     if (statistics_mq != -1)
     {
@@ -222,14 +222,7 @@ void cleanup()
     // fechar o semaforo para logs
     if (sem_log_file != NULL)
     {
-        if (sem_close(sem_log_file) == -1)
-        {
-            printf("\nErro ao fechar semáforo %s", SEM_LOG_FILE);
-        }
-        else
-        {
-            printf("\n%s fechado com sucesso", SEM_LOG_FILE);
-        }
+        sem_close(sem_log_file);
     }
 }
 
