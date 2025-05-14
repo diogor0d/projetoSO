@@ -70,11 +70,11 @@ typedef struct
 // estrutura local para facilitar a logica de acesso à transactions pool na shared memory
 typedef struct
 {
-    unsigned int *size;  // Pointer to the size field in shared memory
-    unsigned int *count; // Pointer to the count field in shared memory
+    unsigned int *size;
+    unsigned int *count;
     unsigned int *num_miners;
     unsigned int *transactions_per_block;
-    PendingTransaction *transactions; // Pointer to the array of transactions in shared memory
+    PendingTransaction *transactions;
 } TransactionPoolInterface;
 
 // Esta estrutura serve para reter informações acerca da informação guardada na shared memory, uma vez que não é possivel utilizar ponteiros na mesma
@@ -89,11 +89,11 @@ typedef struct
 
 typedef struct
 {
-    char *txb_id;              // Pointer to the block ID in shared memory
-    char *previous_block_hash; // Pointer to the previous block hash in shared memory
-    time_t *timestamp;         // Pointer to the timestamp in shared memory
-    unsigned int *nonce;       // Pointer to the nonce in shared memory
-    Transaction *transactions; // Pointer to the array of transactions in shared memory
+    char *txb_id;
+    char *previous_block_hash;
+    time_t *timestamp;
+    unsigned int *nonce;
+    Transaction *transactions;
 } TransactionBlockInterface;
 
 // Por forma a minimizar trabalho adicional, esta estrutura aparentemente redundante, serve apenas para poder recorrer às funções de hashing e de verificação de nonce (pow.c), uma vez que a estrutura TransactionBlockInterface não pode ser utilizada diretamente na shared memory, devido à presença de ponteiros.
@@ -122,25 +122,24 @@ typedef struct
 
 typedef struct
 {
-    unsigned int *last_block_index;    // Pointer to the index of the last block
-    char *last_block_hash;             // Pointer to the hash of the last block
-    unsigned int *num_blocks;          // Pointer to the total number of blocks
-    unsigned int *count;               // Pointer to the count of blocks
-    TransactionBlockInterface *blocks; // Pointer to the array of blocks in shared memory
+    unsigned int *last_block_index;
+    char *last_block_hash;
+    unsigned int *num_blocks;
+    unsigned int *count;
+    TransactionBlockInterface *blocks;
 } LedgerInterface;
 
 #pragma pack(push, 1)
 typedef struct
 {
-    char txb_id[TXB_ID_LEN]; // Block ID
-    char miner_id[7];        // Miner ID (assumido n exceder 6 digitos);
-    int block_index;         // indice na ledger do block aprovado (-1 se um bloco foi rejeitado)
-    int earned_amount;       // Number of transactions in the block (-1 se o bloco foi rejeitado)
-    time_t timestamp;        // Timestamp of the block
+    char txb_id[TXB_ID_LEN];
+    char miner_id[7];
+    int block_index;
+    int earned_amount;
+    time_t timestamp;
 } StatisticsMessage;
 #pragma pack(pop)
 
-// Inline function to compute the size of a TransactionBlock
 static inline size_t
 get_transaction_block_size()
 {

@@ -28,21 +28,21 @@
 #include "../include/Statistics.h"
 #include "../include/SHMManagement.h"
 
+// parametros extern acessiveis a partir de outros processos
 int NUM_MINERS;
 size_t TRANSACTIONS_PER_BLOCK;
 size_t transactions_per_block; // para compatibilidade com o PoW
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE;
 
-// Definições de semáforos e memória partilhada para acesso global
-
+// Definições/atributos e memória partilhada para acesso global
 static int shm_transactionspool_fd, shm_ledger_fd;
 static void *shm_transactionspool_base = NULL;
 static void *shm_ledger_base = NULL;
-
-static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclosed;
-
 int shm_transactionspool_size, shm_ledger_size;
+
+// semaforos
+static sem_t *sem_transactions_pool, *sem_ledger, *sem_minerwork, *sem_pipeclosed;
 
 // para apresentar a ledger no sigusr1
 static LedgerInterface ledger;
@@ -50,13 +50,13 @@ static LedgerInterface ledger;
 // mesage queue
 mqd_t statistics_mq;
 
-// thread gestao
+// thread gestao de validators
+pid_t validators[2]; // validators extra
 pthread_t validator_launcher_thread;
 static int validator_thread_created = 0;
 static volatile int stop_thread = 0;
-pid_t validators[2]; // validators extra
 
-// declarar array para armazenamento dos PIDs dos processos filhos
+// declarar array para armazenamento dos PIDs dos processos filhos (principais)
 pid_t pids[3];
 #define NUM_CHILDREN 3
 
@@ -64,10 +64,10 @@ pid_t pids[3];
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
 static int cleanup_called = 0;
-
 static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
 static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
 
+// funcao para simplificar a abertura do ficheiro de logs
 FILE *open_log_file()
 {
     FILE *file = fopen(LOG_FILE, "a");
@@ -91,30 +91,28 @@ int is_positive_integer(const char *str)
 static void log_info(const char *format, ...)
 {
     char *log_message;
+
+    // formatar a string (fora da seccao critica de sincronizacao) com os placeholders de strings do C
     va_list args;
-
     va_start(args, format);
-
-    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
         perror("Erro ao formatar mensagem de log");
         return;
     }
-
     va_end(args);
 
-    // Get current time (outside of critical section)
+    // obter o tempo atual para apresentacao no log
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
+    char time_str[20]; // buffer para "dd/mm/yyyy hh:mm:ss"
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Determine color based on content (outside of critical section)
-    const char *color_code = "\033[0m"; // Default: no color
+    // determinar a cor com base no contexto do conteudo da mensagem
+    const char *color_code = "\033[0m"; // Default: sem cor
 
     if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
     {
@@ -125,33 +123,35 @@ static void log_info(const char *format, ...)
         color_code = "\033[32m"; // Green
     }
 
-    // CRITICAL SECTION BEGINS - Only lock when actually writing
+    // SECCAO CRITICA - Acesso ao semaforo apenas quando tudo esta pronto para escrita
     sem_wait(sem_log_file);
 
-    // Write to log file
+    // escrita para o ficheiro
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
 
-    // Write to stdout
+    // escrita para o terminal
     fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
             time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
     sem_post(sem_log_file);
-    // CRITICAL SECTION ENDS
+    // FIM DA SECCAO CRITICA
 
-    // Free memory (outside of critical section)
+    // libertar o buffer temporario para a mensagem
     free(log_message);
 }
 
+// funcao para apresentar a ledger de forma formatada
 void dump_ledger(const LedgerInterface *ledger)
 {
     if (ledger == NULL || ledger->blocks == NULL)
     {
-        log_info("Ledger is empty or not initialized.");
+        log_info("Ledger não inicializada.");
         return;
     }
 
+    // buffer para armazenar o ledger de modo a ser logado apenas de uma vez (evitando multiplas entradas separadas no log)
     size_t estimated_size = 256 + (*ledger->count * (sizeof(Transaction) + 100) * TRANSACTIONS_PER_BLOCK);
     char *buffer = (char *)malloc(estimated_size);
     if (!buffer)
@@ -160,30 +160,31 @@ void dump_ledger(const LedgerInterface *ledger)
         return;
     }
 
-    // Initialize buffer with empty string
+    // inicializar o buffer como uma string vazia
     buffer[0] = '\0';
 
-    // Build header info
+    // construir o cabeçalho do ledger
     char temp[256];
     strcat(buffer, "\n=================== Start Ledger ===================\n");
 
-    // Add each block
+    // adicionar cada bloco ao buffer
     for (unsigned int i = 0; i < *ledger->count; i++)
     {
         TransactionBlockInterface block = ledger->blocks[i];
         if (strcmp(block.txb_id, "") == 0)
         {
+            // ignorar entrada na ledger caso o bloco esteja vazio
             continue;
         }
 
-        // Add block header
+        // adicionarr cabeçalho do bloco
         snprintf(temp, sizeof(temp),
                  "||---- Block  %u --\nBlock ID=%s\nPrevious Hash=%s\nBlock Timestamp=%ld\nNonce=%u\nTransactions:\n",
                  i, block.txb_id, block.previous_block_hash,
                  *block.timestamp, *block.nonce);
         strcat(buffer, temp);
 
-        // Add transactions
+        // adicionar transacoes do bloco
         for (unsigned int j = 0; j < TRANSACTIONS_PER_BLOCK; j++)
         {
             Transaction tx = block.transactions[j];
@@ -197,13 +198,14 @@ void dump_ledger(const LedgerInterface *ledger)
 
     strcat(buffer, "=================== End Ledger ===================\n");
 
-    // Output the entire ledger with a single call
+    // apresentacao de uma so vez no log
     log_info("%s", buffer);
 
     // Clean up
     free(buffer);
 }
 
+// funcao para processar os conteudos do ficheiro de configuracao
 void parse_config()
 {
     FILE *file = fopen(CONFIG_FILE, "r");
@@ -250,8 +252,10 @@ void parse_config()
     fclose(file);
 }
 
+// funcao para preparar o processo atual para um fim seguro on demand (libertacao de todos os recursos)
 static void cleanup()
 {
+    // safeguard para evitar chamadas repetidas
     if (cleanup_called)
         return;
     cleanup_called = 1;
@@ -295,20 +299,8 @@ static void cleanup()
     // terminar thread de gestao de validators
     if (validator_thread_created)
     {
-        // First try clean termination
-        stop_thread = 1;
-
-        // Give thread a moment to exit normally
-        struct timespec ts = {.tv_sec = 1, .tv_nsec = 0};
-        nanosleep(&ts, NULL);
-
-        // Then force cancellation if needed
+        // forçar o fim da thread
         pthread_cancel(validator_launcher_thread);
-
-        // Join with timeout to avoid hanging
-        struct timespec join_timeout;
-        clock_gettime(CLOCK_REALTIME, &join_timeout);
-        join_timeout.tv_sec += 2; // 2 second timeout
 
         int join_result = pthread_join(validator_launcher_thread, NULL);
         if (join_result == 0)
@@ -319,10 +311,9 @@ static void cleanup()
         {
             log_info("Erro ao aguardar pelo término da thread de gestao: %d", join_result);
         }
-        validator_thread_created = 0;
     }
 
-    // Terminate child processes
+    // terminar os processos filhos principais
     log_info("A sinalizar processos filhos...");
     for (int i = 0; i < NUM_CHILDREN; i++)
     {
@@ -330,7 +321,7 @@ static void cleanup()
         {
             if (i == 1)
             {
-                sem_wait(sem_pipeclosed); // Wait for the pipe to be closed before sending SIGTERM
+                sem_wait(sem_pipeclosed); // aguardar sinal do miner (writer) para fechar o validator (reader) de forma limpa, sem perda de dados
             }
             log_info("Enviado SIGTERM para o processo filho com PID %d", pids[i]);
             if (kill(pids[i], SIGTERM) == -1)
@@ -340,7 +331,7 @@ static void cleanup()
         }
     }
 
-    // Wait for child processes to exit
+    // aguardar pelo fim dos processos filhos principais
     log_info("A aguardar pelo fim dos processos filhos...");
     for (int i = 0; i < NUM_CHILDREN; i++)
     {
@@ -358,7 +349,7 @@ static void cleanup()
         }
     }
 
-    // Unmap and close shared memory for transaction pool
+    // desmapear, fechar e terminar a shared memory no sistema
     if (shm_transactionspool_base != NULL)
     {
         if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
@@ -390,7 +381,7 @@ static void cleanup()
         log_info("%s terminado com sucesso", SHM_TRANSACTIONS_POOL);
     }
 
-    // Unmap and close shared memory for ledger
+    // Desmapear, fechar e terminar a shared memory do ledger
     if (shm_ledger_base != NULL)
     {
         if (munmap(shm_ledger_base, shm_ledger_size) == -1)
@@ -402,6 +393,17 @@ static void cleanup()
             log_info("Desmapeado %s com sucesso", SHM_LEDGER);
         }
     }
+    if (shm_ledger_fd != -1)
+    {
+        if (close(shm_ledger_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_LEDGER);
+        }
+        else
+        {
+            log_info("Fechado %s com sucesso", SHM_LEDGER);
+        }
+    }
     if (shm_unlink(SHM_LEDGER) == -1)
     {
         log_info("Erro ao terminar %s", SHM_LEDGER);
@@ -411,9 +413,10 @@ static void cleanup()
         log_info("%s terminado com sucesso", SHM_LEDGER);
     }
 
+    // libertar a memoria para a INTERFACE da memoria partlhada do ledger
     freeLedger(&ledger);
 
-    // Close semaphores
+    // Fechar semaforos
     // transactions pool
     if (sem_transactions_pool != NULL)
     {
@@ -479,7 +482,7 @@ static void cleanup()
         }
     }
 
-    // Unlink semaphores
+    // Unlink semaforos
     // transactions pool
     if (sem_unlink(SEM_TRANSACTIONS_POOL) == -1)
     {
@@ -560,7 +563,7 @@ static void cleanup()
         printf("\033[33mController: %s terminado com sucesso\n", SEM_LOG_FILE);
     }
 
-    // Close the log file
+    // fechar o log file
     if (log_file)
     {
         fclose(log_file);
@@ -587,7 +590,7 @@ static void handle_sigusr1(int signum)
 void *validator_launcher(void *arg)
 {
     (void)arg; // Ignorar argumento
-    // Set cancellation state
+    // parametros de cancelamento da thread
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
     pthread_setcanceltype(PTHREAD_CANCEL_DEFERRED, NULL);
 
@@ -598,10 +601,11 @@ void *validator_launcher(void *arg)
 
     log_info("Thread de gestão de validadores em execução...");
 
-    // Use a controlled loop instead of infinite loop
+    // usar um loop controlado em vez de um loop infinito
     TransactionPoolSHM *pool = (TransactionPoolSHM *)shm_transactionspool_base;
     while (!stop_thread)
     {
+        // considera se que nao é necessario utilizar semaforo nesta verificacao apenas de leitura, dado que afeta o thoughput e nao coloca em causa a integridade do programa/dados
         if (*ledger.count >= (unsigned int)BLOCKCHAIN_BLOCKS)
         {
             log_info("Número máximo de blocos atingido. A terminar simulação. (SIGINT enviado para o controlador)");
@@ -616,6 +620,7 @@ void *validator_launcher(void *arg)
 
         if (occupancy >= 0.6)
         {
+            // lancar validator 2
             if (validators[0] == 0)
             {
                 log_info("Transactions pool ocupada a 60%%, a criar o processo de validação.");
@@ -640,6 +645,7 @@ void *validator_launcher(void *arg)
                     log_info("Processo Validator criado com PID %d", validators[0]);
                 }
             }
+            // lancar validator 3
             if (occupancy > 0.8)
             {
                 if (validators[1] == 0)
@@ -669,6 +675,7 @@ void *validator_launcher(void *arg)
         }
         else if (occupancy < 0.4)
         {
+            // terminar validators adicionais
             for (int i = 0; i < 2; i++)
             {
                 if (validators[i] > 0)
@@ -692,7 +699,7 @@ void *validator_launcher(void *arg)
                 }
             }
 
-            // Then check for any remaining zombies
+            // aguardar por algum zombie
             for (int i = 0; i < 2; i++)
             {
                 if (validators[i] > 0)
@@ -708,6 +715,7 @@ void *validator_launcher(void *arg)
             }
         }
 
+        // verificar periodicamente o estado da transactions pool
         sleep(1);
         pthread_testcancel();
     }
@@ -717,10 +725,10 @@ void *validator_launcher(void *arg)
 
 int main()
 {
+    // bloquear (quase) todos os sinais
     for (int i = 1; i < NSIG; i++) // NSIG is the total number of signals
     {
-        // Ignorar sinais que não podem ser tratados ou que não podem ser ignorados
-
+        // Ignorar sinais que não podem ser tratados ou que não podem ser ignorados para o funcionamento do programa
         if (i == SIGKILL || i == SIGCHLD || i == SIGSTOP || i == 32 || i == 33)
         {
             continue;
@@ -735,6 +743,7 @@ int main()
     // Ler e processar o ficheiro de configuração
     parse_config();
 
+    // verificacoes basicas dos parametros no ficheiro de configuracao para assegurar que permitem o bom funcionamento do sistema
     if (BLOCKCHAIN_BLOCKS < 2)
     {
         printf("O número de blocos da blockchain deve ser maior que 1.\n");
@@ -757,6 +766,7 @@ int main()
         exit(EXIT_FAILURE);
     }
 
+    // abertura do ficheiro de log
     log_file = open_log_file();
     if (!log_file)
     {
@@ -922,12 +932,7 @@ int main()
 
     // Iniciar os processos dos varios componentes
 
-    // IMPLEMENTACAO DE VALIDATOR DESATUALIZADA :
-    // - thread para gestao de numero de validators
-    // - numero de validators aativo dinamico
-    // Iniciar o validator
-
-    // Iniciar o miner
+    // inicar o processo miner
     pids[0] = fork();
     if (pids[0] == -1)
     {
@@ -942,6 +947,7 @@ int main()
         exit(EXIT_SUCCESS);
     }
 
+    // Iniciar o processo validator
     pids[1] = fork();
     if (pids[1] == -1)
     {
@@ -985,7 +991,7 @@ int main()
         validator_thread_created = 1;
     }
 
-    // Voltar a tratar os sinais de interrupção e paragem
+    // Voltar a tratar os sinais de interrupção e paragem (após inicio seguro do programa)
     signal(SIGINT, sigint);
     signal(SIGUSR1, handle_sigusr1);
 

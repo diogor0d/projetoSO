@@ -16,13 +16,13 @@
 #include <semaphore.h>
 #include <fcntl.h>
 #include <sys/mman.h>
-#include "../include/Controller.h" // where STATISTICS_MQ and StatisticsMessage are defined
+#include "../include/Controller.h"
 #include "../include/SHMManagement.h"
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
-static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
+static char TIPO_PROCESSO_BUFFER[32];
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER;
 
 static int shm_ledger_fd = -1;
 static void *shm_ledger_base = NULL;
@@ -52,7 +52,6 @@ static void log_info(const char *format, ...)
 
     va_start(args, format);
 
-    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -62,16 +61,14 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
+    char time_str[20];
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Determine color based on content (outside of critical section)
-    const char *color_code = "\033[0m"; // Default: no color
+    const char *color_code = "\033[0m";
 
     if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
     {
@@ -82,22 +79,17 @@ static void log_info(const char *format, ...)
         color_code = "\033[32m"; // Green
     }
 
-    // CRITICAL SECTION BEGINS - Only lock when actually writing
     sem_wait(sem_log_file);
 
-    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
 
-    // Write to stdout
     fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
             time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
     sem_post(sem_log_file);
-    // CRITICAL SECTION ENDS
 
-    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -166,7 +158,6 @@ static void cleanup()
         }
     }
 
-    // Close the log file
     if (log_file)
     {
         fclose(log_file);
@@ -196,7 +187,6 @@ static void cleanup()
 
 void printStatistics()
 {
-    // print statistics struct
     log_info("Estatísticas:");
     log_info("Total de blocos processados: %d", stats.total_blocks_processed);
     log_info("Total de blocos válidos: %d", stats.blocks_in_chain);
@@ -209,13 +199,13 @@ void printStatistics()
 
 static void sigterm(int signum)
 {
-    (void)signum; // Ignore the signal parameter
+    (void)signum;
 
     log_info("SIGTERM recebido. A terminar execução...");
 
-    printStatistics(); // Print statistics before exiting
+    printStatistics();
 
-    cleanup(); // Call the cleanup function to close the log file and semaphores
+    cleanup();
 
     // Exit the process
     exit(EXIT_SUCCESS);
@@ -223,7 +213,7 @@ static void sigterm(int signum)
 
 static void handle_sigusr1(int signum)
 {
-    (void)signum; // Silence unused parameter warning
+    (void)signum;
     log_info("SIGUSR1 recebido - impressão de estatísticas...");
 
     printStatistics();
@@ -249,7 +239,7 @@ void statistics()
     }
     snprintf(TIPO_PROCESSO, sizeof(TIPO_PROCESSO_BUFFER), "STATISTICS [%d]", getpid());
 
-    /* 1) Open the queue for reading */
+    // abrir a message queue
     statistics_mq = mq_open(STATISTICS_MQ, O_RDONLY);
     if (statistics_mq == (mqd_t)-1)
     {
@@ -258,7 +248,6 @@ void statistics()
         exit(EXIT_FAILURE);
     }
 
-    // Criar o segmento de memoria partilhada para LEDGER
     shm_ledger_fd = shm_open(SHM_LEDGER, O_RDWR, 0666);
     if (shm_ledger_fd == -1)
     {
@@ -287,7 +276,6 @@ void statistics()
         exit(EXIT_FAILURE);
     }
 
-    /* 2) Query its attributes so we know how big to make our buffer */
     struct mq_attr attr;
     if (mq_getattr(statistics_mq, &attr) == -1)
     {
@@ -296,7 +284,6 @@ void statistics()
         exit(EXIT_FAILURE);
     }
 
-    /* 3) Allocate a buffer of exactly mq_msgsize bytes */
     buf = malloc(attr.mq_msgsize);
     if (!buf)
     {
@@ -318,7 +305,6 @@ void statistics()
     signal(SIGTERM, sigterm); // processar sigterm após inicio seguro
     signal(SIGUSR1, handle_sigusr1);
 
-    /* 4) Loop receiving */
     while (1)
     {
         ssize_t bytes_received = mq_receive(statistics_mq, buf, attr.mq_msgsize, NULL);
@@ -331,7 +317,6 @@ void statistics()
                 continue;
             }
 
-            /* Cast into your struct and print */
             StatisticsMessage *msg = (StatisticsMessage *)buf;
 
             // log_info("Bloco recebido: %s, Miner ID: %s, Índice do bloco: %d, Recompensa obtida: %d, Timestamp %ld", msg->txb_id, msg->miner_id, msg->block_index, msg->earned_amount, msg->timestamp);
@@ -364,7 +349,6 @@ void statistics()
         {
             if (errno == EINTR)
             {
-                /* Interrupted by signal — just retry */
                 continue;
             }
             log_info("Erro ao receber mensagem da message queue");

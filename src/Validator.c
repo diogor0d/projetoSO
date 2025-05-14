@@ -26,8 +26,8 @@
 
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
-static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
-static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
+static char TIPO_PROCESSO_BUFFER[32];
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER;
 
 // aceder a variavel globais do controller
 int LEDGER_SIZE;
@@ -44,11 +44,9 @@ static mqd_t statistics_mq;
 static LedgerInterface ledgerInterface;
 static TransactionPoolInterface tx_pool;
 
-// definições de variaveis da transactions pool para acesso em todas as threads
 static void *shm_transactionspool_base = NULL;
 static int shm_transactionspool_fd = -1;
 
-// definições de variaveis da ledger para acesso em todas as threads
 static void *shm_ledger_base = NULL;
 static int shm_ledger_fd = -1;
 
@@ -82,15 +80,13 @@ log_info(const char *format, ...)
 
     va_end(args);
 
-    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
+    char time_str[20];
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Determine color based on content (outside of critical section)
     const char *color_code = "\033[0m"; // Default: no color
 
     if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
@@ -102,22 +98,17 @@ log_info(const char *format, ...)
         color_code = "\033[32m"; // Green
     }
 
-    // CRITICAL SECTION BEGINS - Only lock when actually writing
     sem_wait(sem_log_file);
 
-    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
 
-    // Write to stdout
     fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
             time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
     sem_post(sem_log_file);
-    // CRITICAL SECTION ENDS
 
-    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -243,34 +234,33 @@ void cleanup()
 
 static void sigterm(int signum)
 {
-    (void)signum; // Ignore the signal parameter
+    (void)signum;
 
     log_info("SIGTERM recebido. A terminar execução...");
 
-    cleanup(); // Call the cleanup function to close the log file and semaphores
+    cleanup();
 
-    // Exit the process
     exit(EXIT_SUCCESS);
 }
 
-// Function to compare two transactions
+// funcao para comparar duas transações
 int txCompare(const Transaction *tx1, const Transaction *tx2)
 {
     if (tx1 == NULL || tx2 == NULL)
     {
-        return 0; // Return false if either transaction is NULL
+        return 0;
     }
 
-    // Compare all fields of the Transaction struct
+    // comparar todos os campos da transação
     if (strcmp(tx1->tx_id, tx2->tx_id) == 0 &&
         tx1->reward == tx2->reward &&
         tx1->value == tx2->value &&
         tx1->timestamp == tx2->timestamp)
     {
-        return 1; // Transactions are equal
+        return 1;
     }
 
-    return 0; // Transactions are not equal
+    return 0;
 }
 
 void validator(int num)
@@ -388,7 +378,7 @@ void validator(int num)
             exit(1);
         }
 
-        // print_transaction_block(&nemesis_block); // Print the block
+        // print_transaction_block(&nemesis_block);
 
         *(ledgerInterface.count) = 1;
         *(ledgerInterface.blocks[0].txb_id) = 'z';
@@ -468,32 +458,29 @@ void validator(int num)
         memcpy(streamed_block.transactions, payload + header_size, sizeof(Transaction) * TRANSACTIONS_PER_BLOCK);
 
         StatisticsMessage new_msg = {0};
-        int skip_block = 0; // Flag to indicate whether to skip the block
+        int skip_block = 0; // flag para indicar ignorar o bloco (aguardar receber o proximo)
         char last_block_hash[HASH_SIZE];
 
-        // OPTIMIZATION 1: Minimize ledger lock time - get hash and check nonce
+        // Minimizar lock time do semaforo
         sem_wait(sem_ledger);
         memcpy(last_block_hash, ledgerInterface.last_block_hash, HASH_SIZE);
         sem_post(sem_ledger);
 
         log_info("Inicio da validação do bloco %s", streamed_block.txb_id);
 
-        // Verify nonce - can be done outside lock
         if (!verify_nonce(&streamed_block))
         {
             log_info("Bloco recebido com nonce inválido\n");
             skip_block = 1;
         }
 
-        // Check hash - can be done outside lock since we copied the hash
         if (strncmp(streamed_block.previous_block_hash, last_block_hash, HASH_SIZE) != 0)
         {
             log_info("Bloco recebido com hash anterior inválida - Bloco %s rejeitado", streamed_block.txb_id);
             skip_block = 1;
         }
 
-        // OPTIMIZATION 2: Create a copy of the transactions we need to check
-        // This allows us to minimize the time we hold the transaction pool lock
+        // Criar uma copia das transacoes para minimizar o lock time
         Transaction temp_tx_array[TRANSACTIONS_PER_BLOCK];
 
         // Dynamically allocate tx_found_bitmap
@@ -509,10 +496,8 @@ void validator(int num)
 
         if (!skip_block)
         {
-            // OPTIMIZATION 3: Hold transaction pool lock only for the minimum time needed
             sem_wait(sem_tx_pool);
 
-            // First, check if transactions exist in the pool
             // log_info("Verificando transações do bloco %s", streamed_block.txb_id);
             for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK && !skip_block; i++)
             {
@@ -521,12 +506,12 @@ void validator(int num)
                 {
                     if (tx_pool.transactions[j].filled == 0)
                     {
-                        continue; // Skip empty transactions
+                        continue;
                     }
 
                     if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
                     {
-                        // Check if transaction content matches
+                        // verificar se ha correspondencia no conteudo do bloco
                         if (txCompare(&streamed_block.transactions[i], &tx_pool.transactions[j].tx) == 0)
                         {
                             log_info("Conteudo transação %s referenciada difere da transacao na pool. Bloco %s rejeitado",
@@ -537,7 +522,6 @@ void validator(int num)
                         found = 1;
                         tx_found_bitmap[i] = 1;
 
-                        // Keep a copy so we don't need another lock to process later
                         memcpy(&temp_tx_array[i], &tx_pool.transactions[j].tx, sizeof(Transaction));
                         break;
                     }
@@ -552,7 +536,6 @@ void validator(int num)
                 }
             }
 
-            // OPTIMIZATION 4: If the block is valid, remove transactions from pool in the same lock session
             if (!skip_block)
             {
                 // log_info("A remover transações do bloco %s da transactions pool", streamed_block.txb_id);
@@ -562,7 +545,7 @@ void validator(int num)
                     {
                         if (tx_pool.transactions[j].filled == 0)
                         {
-                            continue; // Skip empty transactions
+                            continue;
                         }
 
                         if (strcmp(streamed_block.transactions[i].tx_id, tx_pool.transactions[j].tx.tx_id) == 0)
@@ -575,8 +558,7 @@ void validator(int num)
                     }
                 }
 
-                // OPTIMIZATION 5: Perform aging in the same critical section
-                // log_info("Aging transactions na transactions pool");
+                // mecanismo de aging
                 for (size_t i = 0; i < *(tx_pool.size); i++)
                 {
                     if (tx_pool.transactions[i].filled == 1)
@@ -595,18 +577,17 @@ void validator(int num)
             sem_post(sem_tx_pool);
         }
 
-        // Handle the case where the block should be skipped
+        // tratar do ignore do bloco
         if (skip_block)
         {
             free(buffer);
             buffer = NULL;
             free(streamed_block.transactions);
-            free(tx_found_bitmap); // Free dynamically allocated bitmap
+            free(tx_found_bitmap);
 
-            // OPTIMIZATION 6: Prepare statistics message outside locks
             snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
 
-            // Extract miner ID
+            // extrair o miner id
             int miner_id;
             if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
             {
@@ -621,7 +602,6 @@ void validator(int num)
             new_msg.block_index = -1;
             new_msg.earned_amount = -1;
 
-            // Send message to queue (no lock needed)
             if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
             {
                 log_info("Erro ao enviar mensagem para a message queue %s", STATISTICS_MQ);
@@ -636,15 +616,14 @@ void validator(int num)
 
         log_info("Bloco %s validado com sucesso", streamed_block.txb_id);
 
-        // Block is valid - prepare to add to ledger
-        // Compute hash outside the lock
+        // bloco valido, preparar para inserir na ledger
+        // fazer a computacao fora de lock de semaforo
         char hash[HASH_SIZE];
         compute_sha256(&streamed_block, hash);
 
-        // OPTIMIZATION 7: Short and focused ledger update
         sem_wait(sem_ledger);
 
-        // Double check that ledger state hasn't changed while we were processing
+        // Double check para confirmar que o bloco ainda é válido apos o processamento
         if (strncmp(streamed_block.previous_block_hash, ledgerInterface.last_block_hash, HASH_SIZE) != 0)
         {
             log_info("Estado da ledger alterou-se durante processamento. Bloco %s rejeitado", streamed_block.txb_id);
@@ -655,7 +634,7 @@ void validator(int num)
             continue;
         }
 
-        // Add block to ledger
+        // adicionar o bloco à ledger
         unsigned int next_index = *(ledgerInterface.last_block_index) + 1;
 
         strcpy(ledgerInterface.blocks[next_index].txb_id, streamed_block.txb_id);
@@ -681,10 +660,10 @@ void validator(int num)
 
         log_info("Bloco %s inserido na blockchain.", streamed_block.txb_id);
 
-        // OPTIMIZATION 8: Prepare statistics message outside locks
+        // preparar mensagem de estatisticas fora de lock
         snprintf(new_msg.txb_id, TXB_ID_LEN, "%s", streamed_block.txb_id);
 
-        // Extract miner ID
+        // extrair miner id
         int miner_id;
         if (sscanf(streamed_block.txb_id, "BLOCK-%d-", &miner_id) == 1)
         {
@@ -699,13 +678,13 @@ void validator(int num)
         new_msg.block_index = next_index;
         new_msg.earned_amount = 0;
 
-        // Calculate total transaction rewards
+        // calcular os rewards
         for (size_t i = 0; i < TRANSACTIONS_PER_BLOCK; i++)
         {
             new_msg.earned_amount += streamed_block.transactions[i].reward;
         }
 
-        // Send statistics message (no lock needed)
+        // enviar mensagem de estatisticas para a message queue
         if (mq_send(statistics_mq, (const char *)&new_msg, sizeof(StatisticsMessage), 0) == -1)
         {
             log_info("Erro ao enviar mensagem para a message queue %s: %s (errno=%d)",
@@ -720,7 +699,7 @@ void validator(int num)
         buffer = NULL;
         free(streamed_block.transactions);
         streamed_block.transactions = NULL;
-        free(tx_found_bitmap); // Free dynamically allocated bitmap
+        free(tx_found_bitmap);
         tx_found_bitmap = NULL;
     }
 

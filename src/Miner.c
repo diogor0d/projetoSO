@@ -23,24 +23,26 @@
 #include "../include/PoW/pow.h"
 #include "../include/SHMManagement.h"
 
+// parametros para logging
 static sem_t *sem_log_file = NULL;
 static FILE *log_file = NULL;
+static char TIPO_PROCESSO_BUFFER[32];
+static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER;
 
-static char TIPO_PROCESSO_BUFFER[32];              // Larger static buffer to hold the process type string
-static char *TIPO_PROCESSO = TIPO_PROCESSO_BUFFER; // Point to the static buffer
-
+// semaforos
 static sem_t *sem_transactionspool = NULL;
 static sem_t *sem_minerwork = NULL;
 static sem_t *sem_ledger = NULL;
 static sem_t *sem_pipeclosed = NULL;
 
-// aceder a variavel globais do controller
+// parametros globais uteis do controlador
 int NUM_MINERS;
 int LEDGER_SIZE;
 size_t TRANSACTIONS_PER_BLOCK;
 int shm_transactionspool_size;
 int shm_ledger_size;
 
+// interfaces que facilitam a interação com a shared memory
 static LedgerInterface ledgerInterface;
 static TransactionPoolInterface tx_pool;
 
@@ -83,7 +85,6 @@ static void log_info(const char *format, ...)
 
     va_start(args, format);
 
-    // Format the string (outside of critical section)
     if (vasprintf(&log_message, format, args) == -1)
     {
         va_end(args);
@@ -93,16 +94,14 @@ static void log_info(const char *format, ...)
 
     va_end(args);
 
-    // Get current time (outside of critical section)
     time_t rawtime;
     struct tm *timeinfo;
-    char time_str[20]; // Buffer for "dd/mm/yyyy hh:mm:ss"
+    char time_str[20];
     time(&rawtime);
     timeinfo = localtime(&rawtime);
     strftime(time_str, sizeof(time_str), "%d/%m/%Y %H:%M:%S", timeinfo);
 
-    // Determine color based on content (outside of critical section)
-    const char *color_code = "\033[0m"; // Default: no color
+    const char *color_code = "\033[0m";
 
     if (strcasestr(log_message, "erro") != NULL || strcasestr(log_message, "rejeitado"))
     {
@@ -113,22 +112,17 @@ static void log_info(const char *format, ...)
         color_code = "\033[32m"; // Green
     }
 
-    // CRITICAL SECTION BEGINS - Only lock when actually writing
     sem_wait(sem_log_file);
 
-    // Write to log file
     fprintf(log_file, "%s %s > %s\n", time_str, TIPO_PROCESSO, log_message);
     fflush(log_file);
 
-    // Write to stdout
     fprintf(stdout, "\n\033[33m%s %s > \033[0m%s%s\033[0m",
             time_str, TIPO_PROCESSO, color_code, log_message);
     fflush(stdout);
 
     sem_post(sem_log_file);
-    // CRITICAL SECTION ENDS
 
-    // Free memory (outside of critical section)
     free(log_message);
 }
 
@@ -264,6 +258,7 @@ static void cleanup()
     }
 }
 
+// Thread para tratamento de sinais
 void *signal_handler_thread(void *arg)
 {
     SignalHandlerArgs *args = (SignalHandlerArgs *)arg;
@@ -272,7 +267,7 @@ void *signal_handler_thread(void *arg)
 
     int sig;
 
-    // Wait for SIGTERM
+    // Esperar pelo sigterm
     if (sigwait(set, &sig) == 0)
     {
         if (sig == SIGTERM)
@@ -283,13 +278,12 @@ void *signal_handler_thread(void *arg)
             for (int i = 0; i < NUM_MINERS; i++)
             {
                 log_info("A terminar a thread %d...", i);
-                pthread_cancel(threads[i]); // Send cancellation request
+                pthread_cancel(threads[i]); // enviar pedido de cancelamento
             }
 
             log_info("A aguardar pelo fim de tarefas pendentes...");
 
-            // stop_threads = 1; // Set the stop flag to 1
-
+            // aguardar pelo fim das threads
             for (int i = 0; i < NUM_MINERS; i++)
             {
 
@@ -311,7 +305,7 @@ void *signal_handler_thread(void *arg)
     return NULL;
 }
 
-// Single cleanup function for all resources
+// cleanup unico para todos os recursos alocados na thread (eveitar memory leaks por cancelamento espontaneo das threads)
 void cleanup_thread_resources(void *arg)
 {
     ThreadResources *res = (ThreadResources *)arg;
@@ -326,6 +320,7 @@ void cleanup_thread_resources(void *arg)
     free(res); // Free the structure itself
 }
 
+// Thread miner
 void *miner_thread(void *arg)
 {
     pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL);
@@ -336,7 +331,7 @@ void *miner_thread(void *arg)
 
     log_info("Thread %d em execução...", thread_id);
 
-    // print_ledger(&ledgerInterface); // Print the ledger
+    // print_ledger(&ledgerInterface);
 
     int block_number = 0;
 
@@ -348,7 +343,7 @@ void *miner_thread(void *arg)
         sem_timedwait(sem_minerwork, &ts);
         pthread_testcancel(); // ponto de cancelamento
 
-        // Create and initialize the resources structure
+        // criar e inicializar a estrutura de recursos da thread
         ThreadResources *res = calloc(1, sizeof(ThreadResources));
         if (!res)
         {
@@ -356,7 +351,7 @@ void *miner_thread(void *arg)
             continue;
         }
 
-        // Flag to indicate if we need to break the outer loop
+        // flag para indiocar se deve sair do loop externo
         bool should_break_outer = false;
 
         pthread_cleanup_push(cleanup_thread_resources, res);
@@ -400,8 +395,8 @@ void *miner_thread(void *arg)
                 if (!res->selected_bitmap)
                 {
                     log_info("Thread %d: Bitmap allocation failed", thread_id);
-                    sem_post(sem_transactionspool); // Must release semaphore before breaking
-                    break;                          // Break from do-while(0)
+                    sem_post(sem_transactionspool);
+                    break; // sair do do-while(0)
                 }
 
                 int selected_count = 0;
@@ -411,14 +406,14 @@ void *miner_thread(void *arg)
 
                     if (res->selected_bitmap[random_index])
                     {
-                        continue; // This continue is fine - it's for the inner while loop
+                        continue; // skip se ja foi selecionada
                     }
 
                     PendingTransaction *current_transaction = &tx_pool.transactions[random_index];
 
                     if (strcmp(current_transaction->tx.tx_id, "0") != 0 && current_transaction->filled == 1)
                     {
-                        // Copy transaction data instead of just referencing
+                        // copiar os dados da transação para a estrutura de resposta
                         res->selected_transactions[selected_count].reward = current_transaction->tx.reward;
                         res->selected_transactions[selected_count].value = current_transaction->tx.value;
                         res->selected_transactions[selected_count].timestamp = current_transaction->tx.timestamp;
@@ -434,7 +429,7 @@ void *miner_thread(void *arg)
 
             if (!enough_transactions)
             {
-                break; // Break from do-while(0)
+                break; // sair do do-while(0)
             }
 
             sem_wait(sem_ledger);
@@ -455,8 +450,8 @@ void *miner_thread(void *arg)
             if (ledger_full)
             {
                 log_info("Thread %d: Ledger cheia. Criação de blocos interrompida", thread_id);
-                should_break_outer = true; // Set flag to break outer loop
-                break;                     // Break from do-while(0)
+                should_break_outer = true;
+                break;
             }
 
             // efetuar pow fora de locks de semaforos : minimizar secções críticas
@@ -520,15 +515,15 @@ void *miner_thread(void *arg)
                 log_info("Thread %d: escrita no pipe de validação não efetuada", thread_id);
             }
 
-            // If we reach here, this iteration completed successfully
-        } while (0); // End of do-while(0)
+            // iteracao finilizada com sucesso
+        } while (0);
 
-        // This always executes - proper cleanup regardless of which path was taken
-        pthread_cleanup_pop(1); // Execute cleanup
+        // cleanup independente do caminho de exeuccao
+        pthread_cleanup_pop(1);
 
         if (should_break_outer)
         {
-            break; // Break the outer while(!stop_threads) loop
+            break;
         }
     }
 
@@ -573,7 +568,7 @@ void miner()
         exit(EXIT_FAILURE);
     }
 
-    //
+    // sem ledger
     sem_ledger = sem_open(SEM_LEDGER, 0);
     if (sem_ledger == SEM_FAILED)
     {
@@ -644,13 +639,8 @@ void miner()
 
     //////////////////////////////////////
 
-    // Create the ledger Interface from shared memory
+    // criar a interface para a ledger
     ledgerInterface = interfaceLedger(shm_ledger_base);
-
-    // Print the ledger
-    // print_ledger(&ledgerInterface);
-
-    // Free the dynamically allocated memory for blocks
 
     /////////////////////////////////
 

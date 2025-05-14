@@ -7,6 +7,7 @@ size_t TRANSACTIONS_PER_BLOCK;
 int BLOCKCHAIN_BLOCKS;
 int TRANSACTION_POOL_SIZE;
 
+// criar uma interface para a transactions pool: permite um acesso mais transparente à shared memory de transactions pool
 TransactionPoolInterface interfaceTxPool(void *shm_base)
 {
     TransactionPoolInterface pool;
@@ -22,6 +23,7 @@ TransactionPoolInterface interfaceTxPool(void *shm_base)
     return pool;
 }
 
+// criar uma interface para a transactions pool: permite um acesso mais transparente a um transaction block na shared memory
 TransactionBlockInterface interfaceTxBlock(void *shm_base, size_t block_offset)
 {
     TransactionBlockInterface block;
@@ -42,6 +44,7 @@ TransactionBlockInterface interfaceTxBlock(void *shm_base, size_t block_offset)
     return block;
 }
 
+// criar uma interface para a ledger: permite um acesso mais transparente à shared memory de ledger
 LedgerInterface interfaceLedger(void *shm_base)
 {
     LedgerInterface ledger;
@@ -76,6 +79,7 @@ LedgerInterface interfaceLedger(void *shm_base)
     return ledger;
 }
 
+// liberta a memoria alocada para a interface do ledger
 void freeLedger(LedgerInterface *ledger)
 {
     if (ledger == NULL)
@@ -159,7 +163,6 @@ void print_ledger(const LedgerInterface *ledger)
     }
 }
 
-// Function to print a TransactionBlock
 void print_transaction_block(const TransactionBlock *block)
 {
     if (block == NULL)
@@ -201,7 +204,6 @@ void print_transaction(const Transaction *tx)
            tx->tx_id, tx->reward, tx->value, tx->timestamp);
 }
 
-// Function to print the TransactionPoolInterface
 void print_transaction_pool(TransactionPoolInterface *tx_pool)
 {
     if (tx_pool == NULL || tx_pool->size == NULL || tx_pool->count == NULL || tx_pool->transactions == NULL)
