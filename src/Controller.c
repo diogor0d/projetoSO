@@ -264,11 +264,6 @@ static void cleanup()
 
     log_info("A libertar recursos...");
 
-    log_info("A efetuar dump da ledger...");
-    sem_wait(sem_ledger);
-    dump_ledger(&ledger);
-    sem_post(sem_ledger);
-
     // terminar validators adicionais
     log_info("A sinalizar validators adicionais...");
     for (int i = 0; i < 2; i++)
@@ -387,6 +382,11 @@ static void cleanup()
     {
         log_info("%s terminado com sucesso", SHM_TRANSACTIONS_POOL);
     }
+
+    log_info("A efetuar dump da ledger...");
+    sem_wait(sem_ledger);
+    dump_ledger(&ledger);
+    sem_post(sem_ledger);
 
     // Desmapear, fechar e terminar a shared memory do ledger
     if (shm_ledger_base != NULL)
