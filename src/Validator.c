@@ -114,28 +114,7 @@ log_info(const char *format, ...)
 
 void cleanup()
 {
-    if (shm_transactionspool_fd != -1)
-    {
-        if (close(shm_transactionspool_fd) == -1)
-        {
-            log_info("Erro ao fechar %s", SHM_TRANSACTIONS_POOL);
-        }
-        else
-        {
-            log_info("%s fechada com sucesso", SHM_TRANSACTIONS_POOL);
-        }
-    }
-    if (shm_transactionspool_base != NULL)
-    {
-        if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
-        {
-            log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
-        }
-        else
-        {
-            log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
-        }
-    }
+
     if (shm_ledger_fd != -1)
     {
         if (close(shm_ledger_fd) == -1)
@@ -156,6 +135,29 @@ void cleanup()
         else
         {
             log_info("Desmapeado %s com sucesso", SHM_LEDGER);
+        }
+    }
+
+    if (shm_transactionspool_fd != -1)
+    {
+        if (close(shm_transactionspool_fd) == -1)
+        {
+            log_info("Erro ao fechar %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("%s fechada com sucesso", SHM_TRANSACTIONS_POOL);
+        }
+    }
+    if (shm_transactionspool_base != NULL)
+    {
+        if (munmap(shm_transactionspool_base, shm_transactionspool_size) == -1)
+        {
+            log_info("Erro ao desmapear %s", SHM_TRANSACTIONS_POOL);
+        }
+        else
+        {
+            log_info("Desmapeado %s com sucesso", SHM_TRANSACTIONS_POOL);
         }
     }
 
