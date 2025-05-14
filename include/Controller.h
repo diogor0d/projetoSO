@@ -20,13 +20,10 @@
 #define SEM_LEDGER "/sem_ledger"
 #define SEM_LOG_FILE "/sem_log_file"
 #define SEM_MINERWORK "/sem_minerwork"
-#define SEM_ENOUGHTX "/sem_enoughtx"
-#define SEM_ORIGINBLOCK "/sem_originblock"
 #define SEM_PIPECLOSED "/sem_pipeclosed"
 
 #define SHM_TRANSACTIONS_POOL "/shm_transactions_pool"
 #define SHM_LEDGER "/shm_ledger"
-#define SHM_MINERWORK_CONDVAR "/shm_minerwork_condvar"
 
 #define VALIDATION_PIPE "/tmp/validation_pipe"
 
