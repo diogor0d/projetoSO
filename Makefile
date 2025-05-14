@@ -22,7 +22,7 @@ TARGET = DeiChain
 # Build target
 all:
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lrt -pthread -lssl -lcrypto
-	$(CC) $(CFLAGS) -o txgen src/TxGen.c -lrt -pthread
+	$(CC) $(CFLAGS) -o txgen src/txGen.c -lrt -pthread
 
 # Clean target
 clean:
