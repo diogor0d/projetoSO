@@ -1,6 +1,6 @@
 # DEIChain: A Concurrency-Focused Blockchain Simulation
 
-<img src="images/deichain.png" alt="arch" width="500">
+<img src="deichain.png" alt="arch" width="500">
 
 ## Overview
 DEIChain is a simplified blockchain simulation developed for the Operating Systems (Sistemas Operativos) course of the Informatics Engineering Bachelor's degree. 
